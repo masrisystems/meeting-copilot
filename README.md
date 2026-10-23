@@ -5,6 +5,8 @@ A local, real-time AI meeting assistant for Windows. It captures your microphone
 - **[User]**: your microphone
 - **[Participant]**: everything your PC plays (WASAPI loopback), i.e. the other people in the call
 
+<p align="center"><img src="docs/screenshot.webp" alt="Meeting Copilot window: suggestion cards, live transcript with translation, preset buttons" width="380"></p>
+
 Speech recognition, the knowledge base and the fallback LLM all run locally. Only the prompts sent to Gemini (if configured) leave your machine.
 
 ## Features
