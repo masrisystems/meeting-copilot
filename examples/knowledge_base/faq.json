@@ -1,0 +1,42 @@
+{
+  "faq": {
+    "title": "Beispiel-FAQ einer Webagentur",
+    "list": {
+      "kosten": {
+        "question": "Was kostet eine Website?",
+        "answer": [
+          { "type": "paragraph", "content": "Der Preis hängt vom Umfang ab. Typische Richtwerte:" },
+          { "type": "list", "items": [
+            "Landingpage: 1.500 bis 3.000 Euro",
+            "Unternehmenswebsite mit CMS (bis 10 Seiten): 4.000 bis 8.000 Euro",
+            "Onlineshop: ab 8.000 Euro"
+          ] }
+        ]
+      },
+      "dauer": {
+        "question": "Wie lange dauert ein Projekt?",
+        "answer": [
+          { "type": "paragraph", "content": "Eine Landingpage ist in 2 bis 3 Wochen online, eine Unternehmenswebsite in 6 bis 8 Wochen, ein Shop in 8 bis 12 Wochen. Der Zeitplan steht nach dem Kick-off schriftlich fest." }
+        ]
+      },
+      "pflege": {
+        "question": "Kann ich die Website selbst pflegen?",
+        "answer": [
+          { "type": "paragraph", "content": "Ja. Inhalte, Bilder und Blogartikel lassen sich im CMS ohne Programmierkenntnisse ändern. Eine Einweisung von 60 Minuten ist im Preis enthalten." }
+        ]
+      },
+      "seo": {
+        "question": "Ist SEO enthalten?",
+        "answer": [
+          { "type": "paragraph", "content": "Technisches SEO (Ladezeit, Meta-Daten, strukturierte Daten, Sitemap) ist immer enthalten. Laufende SEO-Betreuung und Content gibt es als monatliches Paket." }
+        ]
+      },
+      "hosting": {
+        "question": "Wo wird die Website gehostet?",
+        "answer": [
+          { "type": "paragraph", "content": "Auf Servern in Deutschland mit täglichem Backup und SSL-Zertifikat. Hosting und Wartung kosten ab 49 Euro im Monat." }
+        ]
+      }
+    }
+  }
+}

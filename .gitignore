@@ -1,0 +1,21 @@
+# Secrets
+.env
+
+# Python / tooling
+.venv/
+__pycache__/
+.pytest_cache/
+
+# Generated
+db_py/
+sessions/
+.browser-profile/
+
+# Your own private data (examples/ holds the public samples)
+/knowledge_base/
+/knowledge_base.json
+/facts.json
+
+# Old Node version (lives on the `legacy` branch)
+node_modules/
+db/
