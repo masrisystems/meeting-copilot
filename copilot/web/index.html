@@ -17,7 +17,9 @@
   header { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--line);
     background: var(--panel); font-size: 12px; color: var(--dim); flex-wrap: wrap; }
   .badge { padding: 2px 8px; border-radius: 4px; background: var(--line); color: var(--text); font-weight: 600; }
-  .badge.gemini { background: #0f3d57; color: var(--confident); }
+  .badge.cloud { background: #0f3d57; color: var(--confident); }
+  #provider { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 4px;
+    padding: 2px 4px; font: 600 12px "Segoe UI", sans-serif; max-width: 190px; }
   .badge.ollama { background: #4a3500; color: var(--warn); }
   .badge.off { background: #3a1212; color: var(--err); }
   .meter { display: flex; align-items: center; gap: 4px; }
@@ -74,9 +76,10 @@
 </head>
 <body>
 <header>
-  <span id="engine" class="badge">-</span>
+  <select id="provider" title="KI-Anbieter (Fallback immer: Ollama lokal)"></select>
+  <span id="engine" class="badge" title="Hat zuletzt geantwortet">-</span>
   <span id="lat"></span>
-  <span id="gnote" style="color:var(--warn)"></span>
+  <span id="cnote" style="color:var(--warn)"></span>
   <span id="stt" class="badge off">STT lädt</span>
   <span class="meter" title="Du (Mikrofon)">
     <svg viewBox="0 0 24 24" fill="none" stroke="var(--user)" stroke-width="2"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
@@ -107,13 +110,15 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const MAX_CARDS = 6;
 let ws, mode = { proactive: true, translate: false }, lastTurn = null;
+const names = {};  // provider id -> label, filled by the "providers" event
+const engineName = (id) => names[id] || id;
 
 function card(ev, isAnswer) {
   $("empty")?.remove();
   const el = document.createElement("div");
   el.className = "card" + (isAnswer ? " answer" : "");
   const label = isAnswer ? `Frage: <b>${esc(ev.query)}</b>` : `<b>${esc(ev.trigger)}</b>`;
-  el.innerHTML = `<div class="meta">${label}<span>${esc(ev.engine)} ${ev.ms} ms</span></div>` +
+  el.innerHTML = `<div class="meta">${label}<span>${esc(engineName(ev.engine))} ${ev.ms} ms</span></div>` +
     (ev.suggestions || []).map((s) => {
       const tone = String(s.tone || "").toLowerCase().replace(/\s+/g, "-");
       return `<div class="sugg t-${esc(tone)}"><small>${esc(s.intent)} · ${esc(s.tone)}</small>${esc(s.text)}</div>`;
@@ -177,7 +182,22 @@ function presets(ev) {
 // Preset buttons are disabled while a question is running (answer or error re-enables them).
 const busy = (on) => document.querySelectorAll("#presets button").forEach((b) => { b.disabled = on; });
 
+function providers(ev) {
+  const sel = $("provider");
+  sel.innerHTML = "";
+  for (const p of ev.list) {
+    names[p.id] = p.label;
+    const o = document.createElement("option");
+    o.value = p.id;
+    o.disabled = !p.configured;
+    o.textContent = p.configured ? `${p.label} · ${p.model}` : `${p.label} (kein Key)`;
+    sel.append(o);
+  }
+  sel.value = ev.active;
+}
+
 const handlers = {
+  providers,
   presets,
   segment,
   translation,
@@ -189,13 +209,14 @@ const handlers = {
   mode: setMode,
   facts: (ev) => { $("facts").textContent = ev.text; },
   memory: (ev) => { $("memory").textContent = ev.text; },
-  engine: (ev) => { const e = $("engine"); e.textContent = ev.engine === "gemini" ? "Gemini" : "Ollama";
-    e.className = "badge " + ev.engine; $("lat").textContent = ev.ms + " ms"; $("err").textContent = ""; },
+  engine: (ev) => { const e = $("engine"); e.textContent = engineName(ev.engine);
+    e.className = "badge " + (ev.engine === "ollama" ? "ollama" : "cloud");
+    $("lat").textContent = ev.ms + " ms"; $("err").textContent = ""; },
   stt: (ev) => { const e = $("stt"); e.textContent = ev.ready ? "STT bereit" : "STT lädt";
     e.className = "badge" + (ev.ready ? "" : " off"); },
   levels: (ev) => { for (const k of ["User", "Participant"])
     $("lv-" + k).style.width = Math.min(100, Math.sqrt(ev[k]) * 300) + "%";
-    $("gnote").textContent = ev.gemini_note || ""; },
+    $("cnote").textContent = ev.cloud_note || ""; },
   focus_query: () => { $("q").focus(); $("q").select(); },
   error: (ev) => { busy(false); $("err").textContent = ev.text; },
 };
@@ -210,6 +231,7 @@ function connect() {
 const send = (obj) => ws?.readyState === 1 && ws.send(JSON.stringify(obj));
 const ask = (query) => send({ type: "ask", query });
 $("ask").onsubmit = (e) => { e.preventDefault(); const q = $("q").value.trim(); if (q) ask(q); $("q").value = ""; };
+$("provider").onchange = (e) => send({ type: "provider", id: e.target.value });
 $("tg-proactive").onclick = () => send({ type: "mode", proactive: !mode.proactive });
 $("tg-translate").onclick = () => send({ type: "mode", translate: !mode.translate });
 connect();

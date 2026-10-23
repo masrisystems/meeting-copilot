@@ -161,6 +161,10 @@ class Assistant:
             self.translate = translate
         self.emit({"type": "mode", "proactive": self.proactive, "translate": self.translate})
 
+    def set_provider(self, provider_id):
+        self.llm.set_primary(provider_id)
+        self.emit(self.llm.describe())
+
     def _engine(self, engine, secs):
         self.engine = engine
         self.emit({"type": "engine", "engine": engine, "ms": round(secs * 1000)})

@@ -23,6 +23,8 @@ dependencies = [
     "rapidfuzz>=3.9",
     "python-dotenv>=1.0",
     "watchfiles>=0.22",
+    "anthropic>=2.2.0",
+    "openai>=3.37.0",
 ]
 
 [dependency-groups]

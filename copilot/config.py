@@ -42,13 +42,35 @@ ECHO_WINDOW_S = 3.0
 ECHO_SIMILARITY = 80
 
 # --- LLM ---
+# Primary cloud engine (switchable live in the UI): gemini | claude | openai | grok | custom | ollama
+LLM_PROVIDER = _env("LLM_PROVIDER", "gemini")
+CLOUD_TIMEOUT_S = float(_env("CLOUD_TIMEOUT", _env("GEMINI_TIMEOUT", "2.5")))  # then Ollama races in parallel
+CLOUD_HARD_TIMEOUT_S = 15  # a cloud call is abandoned (counted as an error) after this
+BREAKER_FAILS = 2
+BREAKER_COOLDOWN_S = 60
+
 GEMINI_API_KEY = _env("GEMINI_API_KEY", "")
 GEMINI_MODEL = _env("GEMINI_MODEL", "gemini-3.6-flash")  # 3.7 is deprecated (routes to 3.8)
 GEMINI_THINKING = _env("GEMINI_THINKING", "minimal")  # minimal | low | medium | high | off
-GEMINI_TIMEOUT_S = float(_env("GEMINI_TIMEOUT", "2.5"))  # after this, Ollama races in parallel
-GEMINI_HARD_TIMEOUT_S = 15  # Gemini call is abandoned (counted as an error) after this
-GEMINI_BREAKER_FAILS = 2
-GEMINI_BREAKER_COOLDOWN_S = 60
+
+ANTHROPIC_API_KEY = _env("ANTHROPIC_API_KEY", "")
+CLAUDE_MODEL = _env("CLAUDE_MODEL", "claude-opus-5-5")  # faster: claude-sonnet-5-5, claude-haiku-5-5
+CLAUDE_EFFORT = _env("CLAUDE_EFFORT", "low")  # low | medium | high | xhigh | max | off
+
+OPENAI_API_KEY = _env("OPENAI_API_KEY", "")
+OPENAI_BASE_URL = _env("OPENAI_BASE_URL", "https://api.openai.com/v1")
+OPENAI_MODEL = _env("OPENAI_MODEL", "gpt-6-luna")
+
+XAI_API_KEY = _env("XAI_API_KEY", "")
+GROK_BASE_URL = _env("GROK_BASE_URL", "https://api.x.ai/v1")
+GROK_MODEL = _env("GROK_MODEL", "grok-4.7")
+
+# Any OpenAI-compatible endpoint: OmniRoute (http://localhost:20128/v1), OpenRouter, LiteLLM, LM Studio ...
+CUSTOM_LABEL = _env("CUSTOM_LABEL", "Custom")
+CUSTOM_BASE_URL = _env("CUSTOM_BASE_URL", "")
+CUSTOM_API_KEY = _env("CUSTOM_API_KEY", "")  # optional for local gateways
+CUSTOM_MODEL = _env("CUSTOM_MODEL", "")
+
 OLLAMA_URL = _env("OLLAMA_URL", "http://127.0.0.1:11434")
 OLLAMA_MODEL = _env("OLLAMA_MODEL", "granite4:7b-a1b-h")
 OLLAMA_TIMEOUT_S = 30

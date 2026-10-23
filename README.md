@@ -7,7 +7,7 @@ A local, real-time AI meeting assistant for Windows. It captures your microphone
 
 <p align="center"><img src="docs/screenshot.webp" alt="Meeting Copilot window: suggestion cards, live transcript with translation, preset buttons" width="380"></p>
 
-Speech recognition, the knowledge base and the fallback LLM all run locally. Only the prompts sent to Gemini (if configured) leave your machine.
+Speech recognition, the knowledge base and the fallback LLM all run locally. Only the prompts sent to the cloud AI you choose (if any) leave your machine.
 
 ## Features
 
@@ -19,7 +19,7 @@ Speech recognition, the knowledge base and the fallback LLM all run locally. Onl
 - **Knowledge base (RAG)** over your own Markdown/JSON notes, plus keyword flashcards
 - **Facts sheet** (budgets, names, dates) extracted automatically and kept across meetings
 - **Meeting memory**: a rolling summary every 5 minutes, so the AI remembers the whole meeting and not just the last few sentences
-- **Gemini Flash** as the primary engine, with **local Ollama** racing in after 2.5 s or taking over when offline or out of quota
+- **Bring your own AI**: Gemini, Claude, OpenAI, Grok, or any OpenAI-compatible URL (OmniRoute, OpenRouter, LiteLLM, LM Studio ...), switchable live in the window. **Local Ollama** races in after 2.5 s and takes over when offline or out of quota
 - Two roles: client/sales calls (`PROMPT=system`) or job interviews and meetings at work (`PROMPT=interview`)
 
 ## Requirements
@@ -30,7 +30,7 @@ Speech recognition, the knowledge base and the fallback LLM all run locally. Onl
   ```sh
   ollama pull granite4:7b-a1b-h
   ```
-- A Gemini API key (optional; without it everything runs on Ollama). The free tier allows only about 20 requests per day per model, which a single meeting exceeds, so enable billing for real use.
+- An API key for at least one cloud AI (optional; without one everything runs on Ollama). A meeting makes hundreds of requests, so free tiers such as Gemini's (about 20 requests per day per model) are not enough.
 - Chrome, Edge or Brave for the app window (otherwise the default browser opens)
 - **Headphones recommended.** With speakers the mic picks up the participants. The app suppresses obvious echoes, but headphones are cleaner.
 
@@ -40,9 +40,32 @@ Speech recognition, the knowledge base and the fallback LLM all run locally. Onl
 git clone https://github.com/masrisystems/meeting-copilot.git
 cd meeting-copilot
 uv sync
-cp .env.example .env                 # add GEMINI_API_KEY, pick PROMPT, add KB_EXTRA_PATHS
+cp .env.example .env                 # add an AI key, pick PROMPT, add KB_EXTRA_PATHS
 uv run python -m copilot.rag index   # build the knowledge base index
 ```
+
+### Choosing the AI
+
+Set the keys you have in `.env`. `LLM_PROVIDER` picks the engine at startup, and the dropdown in the window header switches it live. Providers without a key are shown greyed out.
+
+| `LLM_PROVIDER` | Settings | Default model |
+| --- | --- | --- |
+| `gemini` | `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_THINKING` | `gemini-3.6-flash` |
+| `claude` | `ANTHROPIC_API_KEY`, `CLAUDE_MODEL`, `CLAUDE_EFFORT` | `claude-opus-5-5` at `low` effort (faster: `claude-sonnet-5-5`, `claude-haiku-5-5`) |
+| `openai` | `OPENAI_API_KEY`, `OPENAI_MODEL` (`OPENAI_BASE_URL` for Azure/proxies) | `gpt-6-luna` |
+| `grok` | `XAI_API_KEY`, `GROK_MODEL` | `grok-4.7` |
+| `custom` | `CUSTOM_BASE_URL`, `CUSTOM_MODEL`, optional `CUSTOM_API_KEY`, `CUSTOM_LABEL` | any OpenAI-compatible endpoint |
+| `ollama` | `OLLAMA_MODEL` | local only, no cloud |
+
+Example for [OmniRoute](https://github.com/diegosouzapw/OmniRoute) or another gateway:
+```ini
+LLM_PROVIDER=custom
+CUSTOM_LABEL=OmniRoute
+CUSTOM_BASE_URL=http://localhost:20128/v1
+CUSTOM_MODEL=gh/gpt-5.1-codex
+```
+
+Suggestions use structured JSON output. If an OpenAI-compatible endpoint doesn't support JSON schemas, the app falls back to plain JSON mode and then to prompt-only JSON automatically. For Claude, refusals on the current Opus/Sonnet models are retried on a fallback model server-side (`fallbacks: "default"`).
 
 The first run downloads the Whisper model (`large-v3-turbo`, about 1.6 GB) and the German embedding model.
 
@@ -101,7 +124,7 @@ loopback ─┘   (per source)                      (CUDA)       (turns)      �
                                                                   │
                 facts.json + meeting memory (5 min) + knowledge base (RAG) + last 15 turns
                                                                   │
-                                 Gemini Flash ──(> 2.5 s: race)── Ollama
+              Gemini | Claude | OpenAI | Grok | custom URL ──(> 2.5 s: race)── Ollama
 ```
 
 - **Chunking:** a chunk ends at a pause once it is at least 1.5 s long, and is force-cut at 2.5 s at the quietest point. Short replies ("Ja.") are still sent once the speaker stops.
@@ -109,7 +132,7 @@ loopback ─┘   (per source)                      (CUDA)       (turns)      �
 - **Proactive mode** reacts only to participant speech. It shows at most 2 suggestions, and stays quiet when the model reports `trigger: None`. Your own speech goes into the context but never triggers a suggestion.
 - **Facts:** the model returns `new_facts`. They are merged into `facts.json`, with lists combined rather than overwritten.
 - **Memory:** every `MEMORY_INTERVAL` seconds (default 300), the new part of the transcript is folded into a running summary covering the discussion, decisions, open points and mood. It is sent as `[MEMORY]` with every prompt, shown under "Gedächtnis" in the window, and saved as `sessions/<timestamp>.memory.md`.
-- **Failover:** if Gemini hasn't answered within 2.5 s, Ollama starts in parallel and the first finished answer wins. If Gemini errors, the request goes to Ollama straight away. On repeated errors Gemini pauses for 60 s; on a quota error (429) it pauses for as long as Google says. The header shows which engine answered and why Gemini is off.
+- **Failover:** if the cloud AI hasn't answered within 2.5 s (`CLOUD_TIMEOUT`), Ollama starts in parallel and the first finished answer wins. If the cloud errors, the request goes to Ollama straight away. On repeated errors the cloud AI pauses for 60 s; on a rate-limit or quota error (429) it pauses for as long as the provider says. The header shows which engine answered and why the cloud is off.
 - **Session log:** every transcript segment is appended to `sessions/<timestamp>.jsonl`.
 
 The prompts are in `copilot/prompts/` (`system.md` for client calls, `interview.md` for interviews).
@@ -128,7 +151,7 @@ To use a device other than the Windows default, set `MIC_DEVICE` / `LOOPBACK_DEV
 
 ## Consent and privacy
 
-This tool transcribes other people's speech. Recording or transcribing a conversation without the participants' consent may be illegal where you live (in Germany, for example, §201 StGB). Tell participants and get their consent. Transcripts, memory and facts are stored locally in `sessions/` and `facts.json`. With Gemini enabled, transcript excerpts are sent to Google.
+This tool transcribes other people's speech. Recording or transcribing a conversation without the participants' consent may be illegal where you live (in Germany, for example, §201 StGB). Tell participants and get their consent. Transcripts, memory and facts are stored locally in `sessions/` and `facts.json`. With a cloud AI enabled, transcript excerpts are sent to that provider (or to your gateway).
 
 ## Roadmap
 

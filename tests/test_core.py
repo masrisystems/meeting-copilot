@@ -4,7 +4,10 @@ import numpy as np
 
 from copilot import config
 from copilot.facts import Facts
-from copilot.llm import LLM, parse_json
+import httpx
+
+from copilot.llm import LLM, SUGGESTION_SCHEMA, parse_json
+from copilot.providers import GeminiProvider, Provider
 from copilot.rag import split_text
 from copilot.stt import Segment, is_hallucination
 from copilot.transcript import Transcript
@@ -107,60 +110,119 @@ def test_parse_json_variants():
     assert parse_json("kein json") is None
 
 
-def _llm(monkeypatch, gemini_delay, ollama_delay, gemini_error=None):
-    monkeypatch.setattr(config, "GEMINI_TIMEOUT_S", 0.05)
-    monkeypatch.setattr(config, "GEMINI_API_KEY", "")
-    client = LLM()
-    client._gemini = object()
+class FakeProvider(Provider):
+    def __init__(self, id, delay=0.0, error=None, configured=True):
+        self.id, self.label, self.model = id, id.title(), f"{id}-model"
+        self.delay, self.error, self._configured = delay, error, configured
 
-    async def gemini(*a):
-        await asyncio.sleep(gemini_delay)
-        if gemini_error:
-            raise gemini_error
-        return '{"trigger": "G", "suggestions": [], "new_facts": []}'
+    @property
+    def configured(self):
+        return self._configured
 
-    async def ollama(*a):
-        await asyncio.sleep(ollama_delay)
-        return '{"trigger": "O", "suggestions": [], "new_facts": []}'
-
-    client._gemini_call = gemini
-    client._ollama_call = ollama
-    return client
+    async def complete(self, system, prompt, schema=None):
+        await asyncio.sleep(self.delay)
+        if self.error:
+            raise self.error
+        return '{"trigger": "%s", "suggestions": [], "new_facts": []}' % self.id
 
 
-def test_slow_gemini_still_wins_race_against_slower_ollama(monkeypatch):
-    client = _llm(monkeypatch, gemini_delay=0.15, ollama_delay=0.5)
+def _llm(monkeypatch, cloud_delay, ollama_delay, cloud_error=None, cloud=None):
+    monkeypatch.setattr(config, "CLOUD_TIMEOUT_S", 0.05)
+    monkeypatch.setattr(config, "LLM_PROVIDER", "claude")
+    cloud = cloud or GeminiProvider()  # real retry_after parsing for Gemini quota errors
+    fake = FakeProvider("claude", cloud_delay, cloud_error)
+    fake.retry_after = cloud.retry_after
+    return LLM([fake, FakeProvider("grok", configured=False), FakeProvider("ollama", ollama_delay)])
+
+
+def test_slow_cloud_still_wins_race_against_slower_ollama(monkeypatch):
+    client = _llm(monkeypatch, cloud_delay=0.15, ollama_delay=0.5)
     res, engine, _ = asyncio.run(client.generate_json("s", "p"))
-    assert engine == "gemini" and res["trigger"] == "G"
-    assert client.gemini_available
+    assert engine == "claude" and res["trigger"] == "claude"
+    assert client.primary_available
 
 
-def test_ollama_wins_when_gemini_is_much_slower(monkeypatch):
-    client = _llm(monkeypatch, gemini_delay=1.0, ollama_delay=0.05)
+def test_ollama_wins_when_cloud_is_much_slower(monkeypatch):
+    client = _llm(monkeypatch, cloud_delay=1.0, ollama_delay=0.05)
     res, engine, _ = asyncio.run(client.generate_json("s", "p"))
-    assert engine == "ollama" and res["trigger"] == "O"
-    assert client.gemini_available  # slowness alone does not trip the breaker
+    assert engine == "ollama" and res["trigger"] == "ollama"
+    assert client.primary_available  # slowness alone does not trip the breaker
 
 
-def test_gemini_errors_fall_back_and_open_breaker(monkeypatch):
-    client = _llm(monkeypatch, gemini_delay=0.0, ollama_delay=0.0, gemini_error=RuntimeError("503"))
+def test_cloud_errors_fall_back_and_open_breaker(monkeypatch):
+    client = _llm(monkeypatch, cloud_delay=0.0, ollama_delay=0.0, cloud_error=RuntimeError("503"))
 
     async def run():
         await client.generate_json("s", "p")
         return await client.generate_json("s", "p")
 
     res, engine, _ = asyncio.run(run())
-    assert engine == "ollama" and res["trigger"] == "O"
-    assert not client.gemini_available
+    assert engine == "ollama" and res["trigger"] == "ollama"
+    assert not client.primary_available
 
 
-def test_quota_429_skips_gemini_for_retry_delay(monkeypatch):
+def test_gemini_quota_429_skips_primary_for_retry_delay(monkeypatch):
     err = RuntimeError("429 RESOURCE_EXHAUSTED {'retryDelay': '62535s'}")
     err.code = 429
-    client = _llm(monkeypatch, gemini_delay=0.0, ollama_delay=0.0, gemini_error=err)
+    client = _llm(monkeypatch, cloud_delay=0.0, ollama_delay=0.0, cloud_error=err)
     _, engine, _ = asyncio.run(client.generate_json("s", "p"))
-    assert engine == "ollama" and not client.gemini_available
-    assert "1042 min" in client.gemini_note
+    assert engine == "ollama" and not client.primary_available
+    assert "1042 min" in client.note
+
+
+def test_http_429_uses_retry_after_header():
+    class Resp:
+        headers = {"retry-after": "30"}
+
+    err = RuntimeError("rate limited")
+    err.status_code, err.response = 429, Resp()
+    assert Provider().retry_after(err) == 30
+    assert Provider().retry_after(RuntimeError("boom")) is None
+
+
+def test_switching_provider(monkeypatch):
+    client = _llm(monkeypatch, cloud_delay=0.0, ollama_delay=0.0)
+    assert client.primary.id == "claude"
+    client.set_primary("grok")  # no key -> stays usable via Ollama, with a note
+    assert client.primary.id == "ollama" and not client.primary_available and "grok" in client.note
+    client.set_primary("claude")
+    assert client.primary.id == "claude" and client.note == ""
+    listed = client.describe()
+    assert listed["active"] == "claude"
+    assert [p["configured"] for p in listed["list"]] == [True, False, True]
+
+
+def test_openai_compatible_downgrades_json_mode():
+    import openai
+
+    from copilot.providers import OpenAICompatProvider
+
+    p = OpenAICompatProvider("custom", "OmniRoute", "http://localhost:9/v1", "", "gh/gpt-x", needs_key=False)
+    calls = []
+
+    class Choice:
+        finish_reason = "stop"
+
+        class message:
+            content = '{"trigger": "ok", "suggestions": [], "new_facts": []}'
+
+    class Completions:
+        async def create(self, **kw):
+            calls.append(kw.get("response_format", {}).get("type"))
+            if kw.get("response_format"):
+                raise openai.BadRequestError("response_format json_schema not supported",
+                                             response=httpx.Response(400, request=httpx.Request("POST", "http://x")),
+                                             body=None)
+            return type("R", (), {"choices": [Choice]})()
+
+    p._client = type("C", (), {"chat": type("Chat", (), {"completions": Completions()})()})()
+    assert parse_json(asyncio.run(p.complete("s", "p", SUGGESTION_SCHEMA)))["trigger"] == "ok"
+    assert calls == ["json_schema", "json_object", None] and p._json_mode == "prompt"
+
+
+def test_schema_is_closed_for_strict_providers():
+    assert SUGGESTION_SCHEMA["additionalProperties"] is False
+    assert SUGGESTION_SCHEMA["properties"]["suggestions"]["items"]["additionalProperties"] is False
 
 
 # --- memory --------------------------------------------------------------------------

@@ -22,7 +22,7 @@ class Hub:
         """Call on the event loop."""
         if event["type"] in _HISTORY_TYPES:
             self.history.append(event)
-        elif event["type"] in ("mode", "facts", "memory", "engine", "stt"):
+        elif event["type"] in ("mode", "facts", "memory", "engine", "stt", "providers"):
             self.state[event["type"]] = event
         for ws in list(self.clients):
             asyncio.ensure_future(self._send(ws, event))
@@ -53,6 +53,8 @@ def create_app(hub, assistant):
                 msg = await ws.receive_json()
                 if msg.get("type") == "ask":
                     asyncio.ensure_future(assistant.ask(msg.get("query", "")))
+                elif msg.get("type") == "provider":
+                    assistant.set_provider(msg.get("id", ""))
                 elif msg.get("type") == "mode":
                     assistant.set_mode(proactive=msg.get("proactive"), translate=msg.get("translate"))
         except WebSocketDisconnect:

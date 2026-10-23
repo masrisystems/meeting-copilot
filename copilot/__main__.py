@@ -63,6 +63,8 @@ async def main(args):
     assistant = Assistant(Transcript(session), Facts(fresh=args.fresh_facts), KnowledgeBase(), llm, hub.publish,
                           Memory(session.with_suffix(".memory.md")))
     assistant.set_mode(proactive=True, translate=False)
+    hub.publish(llm.describe())
+    print(f"LLM:      {llm.primary.label} ({llm.primary.model}), fallback Ollama ({llm.fallback.model})")
     hub.publish({"type": "facts", "text": assistant.facts.render()})
     hub.publish({"type": "stt", "ready": False})
 
@@ -97,8 +99,7 @@ async def main(args):
         while True:
             hub.publish({"type": "levels", "User": round(capture.mic.level, 4),
                          "Participant": round(capture.loopback.level, 4),
-                         "gemini": llm.gemini_available,
-                         "gemini_note": "" if llm.gemini_available else llm.gemini_note})
+                         "cloud_note": llm.note})
             capture.mic.level = capture.loopback.level = 0.0
             await asyncio.sleep(0.25)
 
