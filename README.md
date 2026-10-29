@@ -12,10 +12,12 @@ Speech recognition, the knowledge base and the fallback LLM all run locally. Onl
 ## Features
 
 - **Dual-stream capture** (mic + system audio: WASAPI loopback on Windows, PulseAudio/PipeWire monitor on Linux, BlackHole on macOS), Silero VAD, 1.5-2.5 s speech chunks
-- **faster-whisper**: `large-v3-turbo` on CUDA (about 360 ms per chunk on an RTX 4060), or `small` on the CPU when there is no NVIDIA GPU; German/English
+- **faster-whisper**: `large-v3-turbo` on CUDA (about 360 ms per chunk on an RTX 4060), or `small` on the CPU when there is no NVIDIA GPU; German and English by default, any of Whisper's ~99 languages via `LANGUAGES` (see [Languages](#languages))
 - **Proactive suggestions** for questions, objections and action items (1-2 sentences, ready to say)
 - **Push-to-ask**: preset buttons, global hotkeys, or a typed question ("What should I answer?")
-- **Live translation** German to English and English to German
+- **Live translation** into your language (German by default) and from it into the second one
+- **Meeting records**: every meeting is saved locally as a Markdown file with summary, facts, suggestions and the full transcript
+- **Always on top** with adjustable opacity, built in (Windows and Linux/X11)
 - **Knowledge base (RAG)** over your own Markdown/JSON notes, plus keyword flashcards
 - **Facts sheet** (budgets, names, dates) extracted automatically and kept across meetings
 - **Meeting memory**: a rolling summary every 5 minutes, so the AI remembers the whole meeting and not just the last few sentences
@@ -27,7 +29,7 @@ Speech recognition, the knowledge base and the fallback LLM all run locally. Onl
 - Windows 10/11, Linux (PulseAudio or PipeWire) or macOS 12+
 - **Recommended:** an NVIDIA GPU (tested on an RTX 4060 Laptop, 8 GB). Without one, Whisper runs on the CPU (see [Platform notes](#platform-notes))
 - [uv](https://docs.astral.sh/uv/) (installs Python 3.12 and all dependencies, including the CUDA libraries on Windows)
-- [Ollama](https://ollama.com) with `granite4:7b-a1b-h` (the offline fallback):
+- [Ollama](https://ollama.com) with a chat model for the offline fallback, by default `granite4:7b-a1b-h`. Any other installed model works too: every model you have pulled shows up in the AI menu in the window (or set `OLLAMA_MODEL`). The window warns when Ollama isn't running or the model is missing.
   ```sh
   ollama pull granite4:7b-a1b-h
   ```
@@ -35,14 +37,31 @@ Speech recognition, the knowledge base and the fallback LLM all run locally. Onl
 - Chrome, Edge or Brave for the app window (otherwise the default browser opens)
 - **Headphones recommended.** With speakers the mic picks up the participants. The app suppresses obvious echoes, but headphones are cleaner.
 
-## Setup
+## Install
+
+The installer sets up uv, Python and all dependencies, downloads the speech and embedding models, and adds a **Meeting Copilot** icon to your desktop and app menu (Start Menu on Windows, `~/Applications` on macOS). After that, start the copilot with a double-click. No terminal needed.
+
+**Windows** (PowerShell):
+```powershell
+irm https://raw.githubusercontent.com/masrisystems/meeting-copilot/main/install.ps1 | iex
+```
+
+**Linux and macOS:**
+```sh
+curl -LsSf https://raw.githubusercontent.com/masrisystems/meeting-copilot/main/install.sh | sh
+```
+
+The app goes to `~/meeting-copilot` (set `MEETING_COPILOT_DIR` to change that). From a cloned repo, run `./install.sh` or `install.ps1` inside it instead. Re-run the installer to update; your `.env`, notes and sessions are kept. `--uninstall` (`-Uninstall` on Windows) removes the icons.
+
+Started from the icon, the copilot quits when you close its window, a second double-click brings back the running one, and its output goes to `sessions/copilot.log`. Ollama is not installed for you (see [Requirements](#requirements)).
+
+## Manual setup
 
 ```sh
 git clone https://github.com/masrisystems/meeting-copilot.git
 cd meeting-copilot
 uv sync
 cp .env.example .env                 # add an AI key, pick PROMPT, add KB_EXTRA_PATHS
-uv run python -m copilot.rag index   # build the knowledge base index
 ```
 
 ### Choosing the AI
@@ -72,7 +91,7 @@ The first run downloads the Whisper model (`large-v3-turbo`, about 1.6 GB) and t
 
 ### Your own knowledge
 
-The bundled `examples/` (a sample agency FAQ, a sales playbook and flashcards) are used until you add your own:
+The knowledge base starts empty, and the window shows a hint until you add a file. Put your notes as Markdown (`.md`) or JSON files into `knowledge_base/`: products, prices, FAQ, your CV, interview prep. `examples/` has a sample agency FAQ, a sales playbook and flashcards to copy from.
 
 | Path | Content | Git |
 | --- | --- | --- |
@@ -81,7 +100,7 @@ The bundled `examples/` (a sample agency FAQ, a sales playbook and flashcards) a
 | `KB_EXTRA_PATHS` in `.env` | Any other files or folders, e.g. interview prep in your notes vault | — |
 | `facts.json` | Facts collected during meetings | ignored |
 
-Re-run `uv run python -m copilot.rag index` after changing them, or keep `index --watch` running.
+The folder button in the window header opens `knowledge_base/`, and the sliders button opens `.env` (changes apply after a restart). The index is brought up to date when the app starts and whenever a knowledge file changes while it runs, so there is nothing to rebuild by hand.
 
 ### Platform notes
 
@@ -90,6 +109,7 @@ Re-run `uv run python -m copilot.rag index` after changing them, or keep `index 
 | Meeting audio | WASAPI loopback of the default output, built in | Monitor of the default output (`@DEFAULT_MONITOR@`) via `parec`; install `pulseaudio-utils` (Arch: `libpulse`) if it is missing | No built-in loopback. Install [BlackHole](https://github.com/ExistentialAudio/BlackHole) (2ch), create a Multi-Output Device with your speakers/headphones + BlackHole in Audio MIDI Setup, and select it as the output. `LOOPBACK_DEVICE` defaults to `BlackHole` |
 | Whisper on GPU | NVIDIA, CUDA libraries installed by `uv sync` | NVIDIA, with CUDA 12 cuBLAS + cuDNN 9 installed system-wide ([faster-whisper docs](https://github.com/SYSTRAN/faster-whisper#gpu)) | not supported (CPU) |
 | Global hotkeys | yes | X11 only (not Wayland) | yes, after granting the terminal Accessibility access |
+| Always on top / opacity | yes | X11 only (not Wayland); opacity needs a compositing window manager | no (use a tool such as Rectangle Pro or Afloat) |
 | Permissions | none | none | Microphone access for the terminal |
 
 `WHISPER_DEVICE`, `WHISPER_MODEL` and `WHISPER_COMPUTE` default to `auto`: `large-v3-turbo` in `float16` when CUDA is usable, otherwise `small` in `int8` on the CPU. To keep up, a 2.5 s chunk must be transcribed in well under 2.5 s (about 1.2 s when both sides talk at once). Check your machine with `uv run python -m copilot.stt_bench recording.wav`. If it is too slow, set `WHISPER_MODEL=base` (faster, less accurate), fix `WHISPER_LANGUAGE` to skip language detection, and close other CPU-heavy apps. Apple Silicon and recent desktop CPUs usually manage `small`; low-power laptop CPUs may need `base`.
@@ -100,19 +120,35 @@ PROMPT=interview
 KB_EXTRA_PATHS=C:/Users/me/Notes/Interview Prep.md;C:/Users/me/Notes/CV.md
 ```
 
+### Languages
+
+Whisper transcribes about 99 languages. `LANGUAGES` (default `de,en`) lists the ones spoken in your meetings, yours first. Language detection picks only among these, which avoids misdetections, and translation goes into the first one (and from it into the second). Examples:
+
+```ini
+LANGUAGES=de,en,tr        # German speaker, meetings in German, English and Turkish
+LANGUAGES=ar,en           # Arabic speaker; English segments are translated into Arabic
+WHISPER_LANGUAGE=fr       # only French: skips detection, a little faster
+REPLY_LANGUAGE=en         # force English suggestions (by default: German, or the interviewer's language)
+```
+
+The suggestion prompts are written for German client calls and German/English interviews; the window labels are German. For notes in other languages, switch to a multilingual embedding model, e.g. `EMBEDDING_MODEL=intfloat/multilingual-e5-large` (the index is rebuilt automatically). The `small` and `base` CPU models are less accurate for languages with little training data.
+
 ## Run
 
 ```sh
 uv run python -m copilot
 ```
 
-This opens a chromeless window at `http://127.0.0.1:8765` (Chrome, Edge, Brave or Chromium; otherwise the default browser). Keep it on top with a tool such as WindowTop on Windows, or your window manager's "Always on top" (a built-in overlay is on the [roadmap](tickets/README.md)). Options:
+This opens a chromeless window at `http://127.0.0.1:8765`. The copilot does not listen until you click **Meeting starten**. Each meeting gets a fresh transcript and memory (the facts sheet is kept), and no audio device is opened while no meeting runs. **Mikro an/aus** mutes only your microphone; the participants are still transcribed. The window uses Chrome, Edge, Brave or Chromium (otherwise the default browser). It stays on top of the call by default: the pin button in the header (`Ctrl+Alt+O`) toggles that, and the slider next to it sets the opacity (40-100 %). Both are remembered in `settings.json`. When you stop a meeting (or quit during one), it is saved as `meetings/Meeting <date> <time>.md`: final summary, facts, every suggestion and answer, and the full transcript. The document button in the header opens the folder. Set `MEETINGS_DIR` in `.env` to collect them somewhere else, e.g. in your Obsidian vault. Options:
 
 | Flag | Effect |
 | --- | --- |
+| `--start` | Start the meeting (listening) right away |
 | `--fresh-facts` | Start the meeting with an empty facts sheet (overwrites `facts.json` on the first new fact) |
 | `--no-browser` | Don't open the window (open the URL yourself) |
 | `--no-hotkeys` | Don't register global hotkeys |
+| `--exit-on-close` | Quit 10 s after the window is closed (used by the desktop icon) |
+| `--log FILE` | Append output to `FILE` instead of the terminal (used by the desktop icon) |
 
 ### Buttons and hotkeys
 
@@ -124,6 +160,8 @@ This opens a chromeless window at `http://127.0.0.1:8765` (Chrome, Edge, Brave o
 | `Ctrl+Alt+Space` | Focus the question box to type your own question |
 | `Ctrl+Alt+T` | Toggle live translation |
 | `Ctrl+Alt+P` | Pause/resume proactive suggestions |
+| `Ctrl+Alt+M` | Mute/unmute your microphone (the participants are still heard) |
+| `Ctrl+Alt+O` | Keep the window on top, or not |
 
 Presets (label, question, hotkey) are defined once in `PRESETS` in `copilot/config.py`.
 
@@ -140,12 +178,13 @@ loopback ─┘   (per source)                      (CUDA)       (turns)      �
 ```
 
 - **Chunking:** a chunk ends at a pause once it is at least 1.5 s long, and is force-cut at 2.5 s at the quietest point. Short replies ("Ja.") are still sent once the speaker stops.
-- **Transcription:** the language (German/English) is detected per speaker and re-checked every few chunks. Detecting on every chunk would add about 240 ms.
-- **Proactive mode** reacts only to participant speech. It shows at most 2 suggestions, and stays quiet when the model reports `trigger: None`. Your own speech goes into the context but never triggers a suggestion.
+- **Transcription:** the language (one of `LANGUAGES`) is detected per speaker and re-checked every few chunks. Detecting on every chunk would add about 240 ms.
+- **Proactive mode** reacts only to participant speech, once the participant has finished a turn (`PROACTIVE_PAUSE`, 1.5 s without new speech; during a monologue at the latest after `PROACTIVE_MAX_WAIT`, 15 s). It shows at most 2 suggestions (`SINGLE_SUGGESTION=true`: 1, larger), stays quiet when the model reports `trigger: None`, and skips a card whose trigger repeats the one on screen within 60 s. Your own speech goes into the context but never triggers a suggestion.
+- **Reading time:** a card stays on top for at least `SUGGESTION_READ_S` (10 s), and while you are speaking (plus 1.5 s), so you can read it aloud. A newer suggestion waits meanwhile ("Neuer Vorschlag wartet", click to show it now; only the newest is kept). Click a card to pin it until you click it again. Answers to your own questions always show at once.
 - **Facts:** the model returns `new_facts`. They are merged into `facts.json`, with lists combined rather than overwritten.
 - **Memory:** every `MEMORY_INTERVAL` seconds (default 300), the new part of the transcript is folded into a running summary covering the discussion, decisions, open points and mood. It is sent as `[MEMORY]` with every prompt, shown under "Gedächtnis" in the window, and saved as `sessions/<timestamp>.memory.md`.
 - **Failover:** if the cloud AI hasn't answered within 2.5 s (`CLOUD_TIMEOUT`), Ollama starts in parallel and the first finished answer wins. If the cloud errors, the request goes to Ollama straight away. On repeated errors the cloud AI pauses for 60 s; on a rate-limit or quota error (429) it pauses for as long as the provider says. The header shows which engine answered and why the cloud is off.
-- **Session log:** every transcript segment is appended to `sessions/<timestamp>.jsonl`.
+- **Session log:** every transcript segment is appended to `sessions/<timestamp>.jsonl`, one file per meeting.
 
 The prompts are in `copilot/prompts/` (`system.md` for client calls, `interview.md` for interviews).
 
@@ -155,7 +194,7 @@ The prompts are in `copilot/prompts/` (`system.md` for client calls, `interview.
 uv run python -m copilot.devices                   # list audio devices, live level meters
 uv run python -m copilot.stt_bench recording.wav   # VAD chunks + Whisper latency on a WAV file
 uv run python -m copilot.rag search "Was kostet eine Website?"
-uv run python -m copilot.rag index --watch         # re-index when knowledge files change
+uv run python -m copilot.rag index --watch         # re-index when knowledge files change (the app does this itself)
 uv run pytest                                      # unit tests (no audio/GPU needed)
 ```
 
@@ -163,7 +202,7 @@ To use a device other than the system default, set `MIC_DEVICE` / `LOOPBACK_DEVI
 
 ## Consent and privacy
 
-This tool transcribes other people's speech. Recording or transcribing a conversation without the participants' consent may be illegal where you live (in Germany, for example, §201 StGB). Tell participants and get their consent. Transcripts, memory and facts are stored locally in `sessions/` and `facts.json`. With a cloud AI enabled, transcript excerpts are sent to that provider (or to your gateway).
+This tool transcribes other people's speech. Recording or transcribing a conversation without the participants' consent may be illegal where you live (in Germany, for example, §201 StGB). Tell participants and get their consent. Transcripts, memory, meeting records and facts are stored locally in `sessions/`, `meetings/` (or your `MEETINGS_DIR`) and `facts.json`. With a cloud AI enabled, transcript excerpts are sent to that provider (or to your gateway).
 
 ## Roadmap
 

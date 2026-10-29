@@ -41,3 +41,4 @@ The copilot opens its own native window that can stay on top, has adjustable opa
 Start uvicorn in a background thread and open `webview.create_window(..., on_top=True)` on the main thread. Use `win32gui.SetLayeredWindowAttributes` for opacity and extended styles for click-through. Store the window state in `settings.json`.
 
 ## Kommentare
+- 2026-10-29: Always-on-top (`Ctrl+Alt+O`, pin button) and opacity (40-100 %, slider) for the existing app window, persisted in `settings.json` (`copilot/window.py`): Win32 API on Windows, EWMH hints on Linux/X11. WindowTop is no longer needed there. Open: a native window without a browser (pywebview), click-through, restoring the position, Wayland and macOS.
