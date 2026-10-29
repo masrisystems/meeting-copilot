@@ -15,6 +15,8 @@ sessions/
 /knowledge_base/
 /knowledge_base.json
 /facts.json
+/meetings/
+/settings.json
 
 # Old Node version (lives on the `legacy` branch)
 node_modules/
