@@ -141,6 +141,7 @@ class VadWorker(threading.Thread):
         pending = np.zeros(0, dtype=np.float32)
         F = config.VAD_FRAME
         while not self.stop_event.is_set():
+            self.source.speaking = self.chunker.in_speech
             try:
                 block = self.source.queue.get(timeout=0.2)
             except queue.Empty:

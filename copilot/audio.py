@@ -30,13 +30,15 @@ MAC_LOOPBACK_DEFAULT = "BlackHole"
 
 
 class _Source:
-    """Shared by all backends: `device["name"]`, a queue of 16 kHz mono blocks, the last RMS."""
+    """Shared by all backends: `device["name"]`, a queue of 16 kHz mono blocks, the last RMS.
+    start()/stop() open and close the device and may be called repeatedly (mute, stop meeting)."""
 
     def __init__(self, label, device):
         self.label = label
         self.device = device
         self.queue = queue.Queue()
         self.level = 0.0  # last block RMS, read by the UI status loop
+        self.speaking = False  # VAD is inside an utterance, set by VadWorker
 
     def _push(self, out):
         if out.size:
@@ -74,19 +76,10 @@ def find_loopback(p, name=""):
 class Source(_Source):
     def __init__(self, p, label, device):
         super().__init__(label, device)
+        self._p = p
         self.channels = int(device["maxInputChannels"])
         self.rate = int(device["defaultSampleRate"])
-        self._resampler = soxr.ResampleStream(self.rate, config.SAMPLE_RATE, 1, dtype="float32")
-        self._stream = p.open(
-            format=pyaudio.paInt16,
-            channels=self.channels,
-            rate=self.rate,
-            input=True,
-            input_device_index=device["index"],
-            frames_per_buffer=int(self.rate * 0.02),
-            stream_callback=self._callback,
-            start=False,
-        )
+        self._stream = None
 
     def _callback(self, in_data, frame_count, time_info, status):
         pcm = np.frombuffer(in_data, dtype=np.int16).astype(np.float32) / 32768.0
@@ -96,11 +89,24 @@ class Source(_Source):
         return (None, pyaudio.paContinue)
 
     def start(self):
-        self._stream.start_stream()
+        if self._stream:
+            return
+        self._resampler = soxr.ResampleStream(self.rate, config.SAMPLE_RATE, 1, dtype="float32")
+        self._stream = self._p.open(
+            format=pyaudio.paInt16,
+            channels=self.channels,
+            rate=self.rate,
+            input=True,
+            input_device_index=self.device["index"],
+            frames_per_buffer=int(self.rate * 0.02),
+            stream_callback=self._callback,
+        )
 
     def stop(self):
-        self._stream.stop_stream()
-        self._stream.close()
+        if self._stream:
+            self._stream.stop_stream()
+            self._stream.close()
+            self._stream = None
 
 
 # --- Linux (PulseAudio / PipeWire) ------------------------------------------------
@@ -131,6 +137,8 @@ class ParecSource(_Source):
             self._push(np.frombuffer(data, dtype=np.float32))
 
     def start(self):
+        if self._proc:
+            return
         self._proc = subprocess.Popen(
             ["parec", f"--device={self.device['name']}", "--format=float32le",
              f"--rate={config.SAMPLE_RATE}", "--channels=1", "--raw", "--latency-msec=20"],
@@ -161,26 +169,31 @@ class SoundDeviceSource(_Source):
         super().__init__(label, device)
         self.channels = int(device["max_input_channels"])
         self.rate = int(device["default_samplerate"])
-        self._resampler = soxr.ResampleStream(self.rate, config.SAMPLE_RATE, 1, dtype="float32")
-        self._stream = sd.InputStream(
-            device=device["index"],
-            channels=self.channels,
-            samplerate=self.rate,
-            dtype="float32",
-            blocksize=int(self.rate * 0.02),
-            callback=self._callback,
-        )
+        self._stream = None
 
     def _callback(self, indata, frames, time_info, status):
         pcm = indata.mean(axis=1) if self.channels > 1 else indata[:, 0]
         self._push(self._resampler.resample_chunk(np.ascontiguousarray(pcm)))
 
     def start(self):
+        if self._stream:
+            return
+        self._resampler = soxr.ResampleStream(self.rate, config.SAMPLE_RATE, 1, dtype="float32")
+        self._stream = sd.InputStream(
+            device=self.device["index"],
+            channels=self.channels,
+            samplerate=self.rate,
+            dtype="float32",
+            blocksize=int(self.rate * 0.02),
+            callback=self._callback,
+        )
         self._stream.start()
 
     def stop(self):
-        self._stream.stop()
-        self._stream.close()
+        if self._stream:
+            self._stream.stop()
+            self._stream.close()
+            self._stream = None
 
 
 class Capture:
