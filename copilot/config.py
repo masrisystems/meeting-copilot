@@ -15,7 +15,7 @@ def _env(name, default):
 
 # --- Audio ---
 SAMPLE_RATE = 16000
-MIC_DEVICE = _env("MIC_DEVICE", "")  # substring of device name; empty = Windows default
+MIC_DEVICE = _env("MIC_DEVICE", "")  # substring of device name; empty = system default
 LOOPBACK_DEVICE = _env("LOOPBACK_DEVICE", "")  # substring of output device name; empty = default
 
 # --- VAD / chunking ---
@@ -28,9 +28,11 @@ PRE_ROLL_S = 0.2
 MIN_UTTERANCE_S = 0.25  # anything shorter is a click/cough, dropped
 
 # --- STT ---
-WHISPER_MODEL = _env("WHISPER_MODEL", "large-v3-turbo")
-WHISPER_DEVICE = _env("WHISPER_DEVICE", "cuda")
-WHISPER_COMPUTE = _env("WHISPER_COMPUTE", "float16")
+# "auto": CUDA (large-v3-turbo, float16) when an NVIDIA GPU is usable, else CPU (small, int8)
+WHISPER_DEVICE = _env("WHISPER_DEVICE", "auto")  # auto | cuda | cpu
+WHISPER_MODEL = _env("WHISPER_MODEL", "auto")
+WHISPER_COMPUTE = _env("WHISPER_COMPUTE", "auto")
+WHISPER_DEFAULTS = {"cuda": ("large-v3-turbo", "float16"), "cpu": ("small", "int8")}
 WHISPER_LANGUAGE = _env("WHISPER_LANGUAGE", "auto")  # auto (de/en, sticky per speaker) | de | en
 LANG_DETECT_EVERY = 4  # re-detect language every Nth chunk per source
 PROMPT_CONTEXT_CHARS = 200

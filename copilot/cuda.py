@@ -15,4 +15,5 @@ def add_nvidia_dll_dirs():
             os.environ["PATH"] = str(bin_dir) + os.pathsep + os.environ.get("PATH", "")
 
 
-add_nvidia_dll_dirs()
+if hasattr(os, "add_dll_directory"):  # Windows only
+    add_nvidia_dll_dirs()

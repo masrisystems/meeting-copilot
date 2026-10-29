@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import os
 import queue
+import shutil
 import subprocess
 import threading
 import webbrowser
@@ -30,7 +31,11 @@ _BROWSERS = [
     Path(os.environ.get("PROGRAMFILES(X86)", ""), "Microsoft/Edge/Application/msedge.exe"),
     Path(os.environ.get("PROGRAMFILES", ""), "Microsoft/Edge/Application/msedge.exe"),
     Path(os.environ.get("PROGRAMFILES", ""), "BraveSoftware/Brave-Browser/Application/brave.exe"),
-]
+    Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
+    Path("/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"),
+    Path("/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"),
+] + [Path(p) for p in map(shutil.which, ("google-chrome", "chromium", "chromium-browser",
+                                          "microsoft-edge", "brave-browser")) if p]
 
 
 def open_window(url):
