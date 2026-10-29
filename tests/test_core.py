@@ -1,4 +1,5 @@
 import asyncio
+from types import SimpleNamespace
 
 import numpy as np
 
@@ -305,3 +306,219 @@ def test_hotkeys_convert_to_pynput_format():
     assert to_pynput("ctrl+alt+1") == "<ctrl>+<alt>+1"
     assert to_pynput("ctrl+alt+space") == "<ctrl>+<alt>+<space>"
     assert all(to_pynput(p["hotkey"]) for p in config.PRESETS)
+
+
+# --- ollama models -------------------------------------------------------------------
+def test_ollama_model_switch_and_status_note(monkeypatch):
+    client = _llm(monkeypatch, cloud_delay=0, ollama_delay=0)
+    ollama = client.fallback
+    installed = None
+
+    async def fake_installed():
+        return installed
+
+    ollama.installed = fake_installed
+    assert asyncio.run(client.check_ollama()) and "läuft nicht" in client.ollama_note
+
+    installed = ["llama3.2:3b", "qwen3:4b"]
+    assert asyncio.run(client.check_ollama()) and "ollama-model fehlt" in client.ollama_note
+    assert not asyncio.run(client.check_ollama())  # unchanged: no UI update
+
+    client.set_primary("ollama:qwen3:4b")
+    assert client.primary is ollama and ollama.model == "qwen3:4b" and client.ollama_note == ""
+    assert client.describe()["ollama_models"] == installed
+
+
+# --- knowledge base sync -------------------------------------------------------------
+def test_kb_sync_reindexes_only_on_change_and_drops_stale_index(tmp_path, monkeypatch):
+    import lancedb
+
+    from copilot import rag
+
+    monkeypatch.setattr(config, "KB_DIR", tmp_path / "kb")
+    monkeypatch.setattr(config, "KB_EXTRA_PATHS", [])
+    monkeypatch.setattr(config, "DB_DIR", tmp_path / "db")
+    monkeypatch.setattr(rag, "_embed", lambda texts: [[0.1, 0.2, 0.3] for _ in texts])
+    (tmp_path / "kb").mkdir()
+    (tmp_path / "kb" / "preise.md").write_text("Eine Website kostet ab 999 Euro.", encoding="utf-8")
+    calls = []
+    real_index = rag.index
+    monkeypatch.setattr(rag, "index", lambda: (calls.append(1), real_index()))
+
+    assert rag.sync() == 1 and len(calls) == 1
+    assert rag.sync() == 1 and len(calls) == 1  # nothing changed
+    (tmp_path / "kb" / "preise.md").unlink()
+    assert rag.sync() == 0 and len(calls) == 2
+    assert config.DB_TABLE not in lancedb.connect(str(tmp_path / "db")).list_tables().tables
+
+
+# --- meeting -------------------------------------------------------------------------
+class FakeSource:
+    def __init__(self):
+        self.open = False
+
+    def start(self):
+        self.open = True
+
+    def stop(self):
+        self.open = False
+
+
+def _meeting_assistant(tmp_path, monkeypatch, open_capture):
+    from copilot.assistant import Assistant
+    from copilot.memory import Memory
+
+    monkeypatch.setattr(config, "SESSIONS_DIR", tmp_path)
+    events = []
+    a = Assistant(Transcript(), Facts(tmp_path / "facts.json"), None, None, events.append, Memory(), open_capture)
+    return a, events
+
+
+def test_meeting_opens_devices_only_while_running_and_mute_keeps_participants(tmp_path, monkeypatch):
+    class FakeCapture:
+        mic, loopback = FakeSource(), FakeSource()
+        sources = [mic, loopback]
+
+    cap = FakeCapture()
+    a, events = _meeting_assistant(tmp_path, monkeypatch, lambda: cap)
+
+    async def run():
+        assert a.capture is None  # idle: no device touched
+        a.start_meeting()
+        assert cap.mic.open and cap.loopback.open and a.transcript.session_path.parent == tmp_path
+        assert {"type": "reset"} in events
+        a.set_mic(False)
+        assert not cap.mic.open and cap.loopback.open
+        a.stop_meeting()
+        assert not cap.mic.open and not cap.loopback.open
+        a.start_meeting()  # mute is remembered
+        assert not cap.mic.open and cap.loopback.open
+        await asyncio.sleep(0)
+
+    asyncio.run(run())
+    assert events[-1] == {"type": "meeting", "active": True, "mic": False, "error": ""}
+
+
+def test_meeting_audio_error_is_reported_not_fatal(tmp_path, monkeypatch):
+    def broken():
+        raise RuntimeError("'parec' not found")
+
+    a, events = _meeting_assistant(tmp_path, monkeypatch, broken)
+    a.start_meeting()
+    assert events[-1] == {"type": "meeting", "active": False, "mic": True, "error": "'parec' not found"}
+
+
+def test_meeting_record_is_saved_on_stop(tmp_path, monkeypatch):
+    cap = SimpleNamespace(mic=FakeSource(), loopback=FakeSource())
+    cap.sources = [cap.mic, cap.loopback]
+    a, events = _meeting_assistant(tmp_path, monkeypatch, lambda: cap)
+    monkeypatch.setattr(config, "MEETINGS_DIR", tmp_path / "meetings")
+
+    async def run():
+        a.start_meeting()
+        a.on_segment(seg("Participant", "Was kostet die Website?", 1.0))
+        a.on_segment(seg("User", "Ab 999 Euro.", 3.0))
+        a._card({"type": "suggestion", "trigger": "Preisfrage", "ts": 0,
+                 "suggestions": [{"text": "Das hängt vom Umfang ab."}]})
+        await a.stop_meeting()
+
+    asyncio.run(run())
+    [record] = (tmp_path / "meetings").iterdir()
+    text = record.read_text(encoding="utf-8")
+    assert "**Teilnehmer:** Was kostet die Website?" in text and "**Du:** Ab 999 Euro." in text
+    assert "Preisfrage" in text and "Das hängt vom Umfang ab." in text
+    assert events[-1] == {"type": "saved", "path": str(record)}
+
+
+def test_empty_meeting_writes_no_record(tmp_path, monkeypatch):
+    cap = SimpleNamespace(mic=FakeSource(), loopback=FakeSource())
+    cap.sources = [cap.mic, cap.loopback]
+    a, _ = _meeting_assistant(tmp_path, monkeypatch, lambda: cap)
+    monkeypatch.setattr(config, "MEETINGS_DIR", tmp_path / "meetings")
+
+    async def run():
+        a.start_meeting()
+        await a.stop_meeting()
+
+    asyncio.run(run())
+    assert not (tmp_path / "meetings").exists()
+
+
+# --- languages -----------------------------------------------------------------------
+def test_translation_goes_into_your_language_and_from_it_into_the_second(tmp_path, monkeypatch):
+    targets = []
+
+    class FakeLLM:
+        async def generate(self, system, prompt):
+            targets.append(system.split("'")[-2])
+            return "x", "ollama", 0.1
+
+    a, _ = _meeting_assistant(tmp_path, monkeypatch, None)
+    a.llm = FakeLLM()
+    monkeypatch.setattr(config, "LANGUAGES", ["ar", "de", "en"])
+    for lang in ("tr", "ar"):
+        s = seg("Participant", "Merhaba", 1.0)
+        s.lang = lang
+        asyncio.run(a._translate(s))
+    assert targets == ["ar", "de"]
+
+
+# --- window --------------------------------------------------------------------------
+def test_window_settings_are_clamped_and_persisted(tmp_path, monkeypatch):
+    from copilot import window
+
+    monkeypatch.setattr(window, "SETTINGS_FILE", tmp_path / "settings.json")
+    monkeypatch.setattr(window, "supported", lambda: False)
+    w = window.Window()
+    assert w.state() == {"type": "window", "supported": False, "on_top": True, "opacity": 1.0}
+    w.set(on_top=False, opacity=0.1)
+    assert window.Window().settings == {"on_top": False, "opacity": 0.4}
+
+
+# --- proactive pacing ----------------------------------------------------------------
+def _proactive_assistant(tmp_path, monkeypatch, triggers):
+    a, events = _meeting_assistant(tmp_path, monkeypatch, None)
+    answers = iter(triggers)
+
+    class FakeLLM:
+        async def generate_json(self, system, prompt):
+            t = next(answers)
+            return {"trigger": t, "suggestions": [{"text": f"{t} 1"}, {"text": f"{t} 2"}], "new_facts": []}, "ollama", 0.1
+
+    a.llm = FakeLLM()
+    a.kb = SimpleNamespace(context=lambda q: "")
+    a.transcript.add(seg("Participant", "Das ist uns zu teuer.", 1.0))
+    return a, events
+
+
+def test_proactive_skips_the_same_trigger_but_shows_a_new_one(tmp_path, monkeypatch):
+    a, events = _proactive_assistant(tmp_path, monkeypatch, ["Preiseinwand", "preiseinwand", "Terminfrage"])
+    for _ in range(3):
+        asyncio.run(a._run_proactive())
+    assert [e["trigger"] for e in events if e["type"] == "suggestion"] == ["Preiseinwand", "Terminfrage"]
+
+
+def test_single_suggestion_option(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "SINGLE_SUGGESTION", True)
+    a, events = _proactive_assistant(tmp_path, monkeypatch, ["Preiseinwand"])
+    asyncio.run(a._run_proactive())
+    [card] = [e for e in events if e["type"] == "suggestion"]
+    assert [s["text"] for s in card["suggestions"]] == ["Preiseinwand 1"]
+
+
+def test_proactive_waits_for_the_end_of_the_turn(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "PROACTIVE_DEBOUNCE_S", 0.2)
+    monkeypatch.setattr(config, "PROACTIVE_MAX_PENDING_S", 5)
+    a, _ = _meeting_assistant(tmp_path, monkeypatch, None)
+    fired = []
+    a._fire = lambda: fired.append(True)
+
+    async def run():
+        for _ in range(5):  # the participant keeps talking: one segment every 0.1 s
+            a._schedule()
+            await asyncio.sleep(0.1)
+        assert fired == []
+        await asyncio.sleep(0.25)  # pause after the turn
+        assert fired == [True]
+
+    asyncio.run(run())

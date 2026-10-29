@@ -6,9 +6,7 @@ pynput; macOS asks for the Accessibility permission on first use.
 
 import sys
 
-from . import config
-
-WINDOW_TITLE = "Meeting Copilot"
+from . import config, window
 
 
 def focus_window():
@@ -18,10 +16,7 @@ def focus_window():
     import win32com.client
     import win32gui
 
-    hwnds = []
-    win32gui.EnumWindows(
-        lambda h, _: hwnds.append(h) if WINDOW_TITLE in win32gui.GetWindowText(h) else None, None
-    )
+    hwnds = window.find_hwnds()
     if hwnds:
         # Windows refuses SetForegroundWindow from a background process unless an
         # input event just happened; a synthetic Alt press satisfies that rule.
@@ -47,7 +42,7 @@ def _bind(bindings):
     keyboard.GlobalHotKeys({to_pynput(combo): fn for combo, fn in bindings.items()}).start()
 
 
-def register(loop, assistant, emit):
+def register(loop, assistant, emit, win):
     def on_loop(fn, *args):
         return lambda: loop.call_soon_threadsafe(fn, *args)
 
@@ -62,6 +57,10 @@ def register(loop, assistant, emit):
     bindings[config.HOTKEY_FOCUS] = focus
     bindings[config.HOTKEY_TRANSLATE] = on_loop(lambda: assistant.set_mode(translate=not assistant.translate))
     bindings[config.HOTKEY_PROACTIVE] = on_loop(lambda: assistant.set_mode(proactive=not assistant.proactive))
+    bindings[config.HOTKEY_MIC] = on_loop(lambda: assistant.set_mic(not assistant.mic_on))
+    if win.supported:
+        bindings[config.HOTKEY_ON_TOP] = on_loop(lambda: (win.set(on_top=not win.settings["on_top"]),
+                                                         emit(win.state())))
     try:
         _bind(bindings)
     except Exception as e:  # no X server, Wayland, missing permission ...: the buttons still work

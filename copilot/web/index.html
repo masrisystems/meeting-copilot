@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Meeting Copilot</title>
+<link rel="icon" type="image/svg+xml" href="/icon.svg">
 <style>
   :root {
     --bg: #07090c; --panel: #10141a; --line: #1f2630; --text: #f4f6f8; --dim: #8a94a3;
@@ -30,11 +31,38 @@
   button.tog { background: transparent; border: 1px solid var(--line); color: var(--dim); border-radius: 4px;
     padding: 3px 8px; font: inherit; cursor: pointer; }
   button.tog.on { border-color: var(--ok); color: var(--ok); }
+  button.tog.icon { display: flex; padding: 3px 6px; }
+  button.tog.icon svg { width: 14px; height: 14px; }
+
+  #bar { display: flex; gap: 8px; padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  #meeting { flex: 1; border: 1px solid var(--ok); border-radius: 4px; padding: 8px; cursor: pointer;
+    background: var(--ok); color: #000; font: 700 15px "Segoe UI", sans-serif; }
+  #meeting.live { background: transparent; color: var(--err); border-color: var(--err); }
+  #meeting.live::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--err); margin-right: 8px; vertical-align: 1px; }
+  #win { display: none; align-items: center; gap: 6px; }
+  #win input { width: 70px; accent-color: var(--confident); }
+  #mic { display: flex; align-items: center; gap: 6px; padding: 3px 10px; }
+  #mic svg { width: 16px; height: 16px; }
+  #mic.muted { border-color: var(--err); color: var(--err); }
+  #notice .n { padding: 6px 12px; font-size: 13px; border-bottom: 1px solid var(--line); }
+  #notice .err { color: var(--err); }
+  #notice .warn { color: var(--warn); }
+  #notice .info { background: #0f2a3a; }
+  button.link { background: none; border: 0; padding: 0; color: var(--confident); text-decoration: underline;
+    font: inherit; cursor: pointer; }
 
   #cards { padding: 12px; display: flex; flex-direction: column; gap: 10px; max-height: 55vh; overflow-y: auto; }
   .card { border-left: 4px solid var(--confident); background: var(--panel); border-radius: 6px; padding: 10px 12px;
     transition: opacity .4s; }
-  .card.old { opacity: .38; }
+  .card { cursor: pointer; }
+  .card.old { opacity: .7; }
+  .card.pinned { opacity: 1; outline: 1px solid var(--confident); }
+  .card.pinned .meta::after { content: "angeheftet"; margin-left: auto; color: var(--confident); }
+  body.single .card:not(.old) .sugg { font-size: 27px; }
+  #pending { display: none; margin: 8px 12px 0; padding: 6px 10px; border: 1px solid var(--confident);
+    border-radius: 4px; background: #0f2a3a; color: var(--text); font: 600 13px "Segoe UI", sans-serif;
+    cursor: pointer; text-align: left; }
   .card.old .sugg { font-size: 16px; }
   .card .meta { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--dim);
     display: flex; gap: 8px; margin-bottom: 4px; }
@@ -92,9 +120,34 @@
   <span class="spacer"></span>
   <button id="tg-proactive" class="tog" title="Strg+Alt+P">Proaktiv</button>
   <button id="tg-translate" class="tog" title="Strg+Alt+T">Übersetzen</button>
+  <span id="win">
+    <button id="pin" class="tog icon" title="Immer im Vordergrund (Strg+Alt+O)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M9 4h6l-1 6 3 3v2H7v-2l3-3z"/><path d="M12 15v6"/></svg>
+    </button>
+    <input id="opacity" type="range" min="40" max="100" step="5" title="Deckkraft">
+  </span>
+  <button id="open-meetings" class="tog icon" title="Gespeicherte Meetings öffnen">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 13h6M10 17h6"/></svg>
+  </button>
+  <button id="open-notes" class="tog icon" title="Wissensbasis öffnen (Änderungen gelten sofort)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+  </button>
+  <button id="open-settings" class="tog icon" title="Einstellungen (.env) öffnen (gelten nach Neustart)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>
+  </button>
 </header>
 
-<div id="cards"><div id="empty">Warte auf den Gesprächspartner …</div></div>
+<div id="bar">
+  <button id="meeting">Meeting starten</button>
+  <button id="mic" class="tog" title="Mikrofon an/aus (Strg+Alt+M). Die Teilnehmer werden weiter gehört.">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3z"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+    <span>Mikro an</span>
+  </button>
+</div>
+<div id="notice"></div>
+
+<button id="pending" title="Sofort anzeigen"></button>
+<div id="cards"></div>
 <div id="err"></div>
 <div id="transcript"></div>
 <details><summary>Fakten</summary><pre id="facts">(noch keine)</pre></details>
@@ -110,6 +163,12 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const MAX_CARDS = 6;
 let ws, mode = { proactive: true, translate: false }, lastTurn = null;
+let meeting = { active: false, mic: true, error: "" }, kb = null, ollamaNote = "", saved = "";
+let win = { on_top: true, opacity: 1 };
+const MIC_ICONS = { on: '<path d="M12 3a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3z"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>', off: '<path d="M15 9.3V6a3 3 0 0 0-5.7-1.3M9 9v2a3 3 0 0 0 5.1 2.1"/><path d="M5 11a7 7 0 0 0 11.4 5.4M19 11a7 7 0 0 1-.6 2.8M12 18v3M3 3l18 18"/>' };
+// Reading time: a new proactive card waits until the current one has been shown for readMs,
+// you have stopped talking, and nothing is pinned. Only the newest waiting card is kept.
+let readMs = 10000, holdUntil = 0, userSpokeAt = 0, pinned = null, pending = null;
 const names = {};  // provider id -> label, filled by the "providers" event
 const engineName = (id) => names[id] || id;
 
@@ -117,6 +176,8 @@ function card(ev, isAnswer) {
   $("empty")?.remove();
   const el = document.createElement("div");
   el.className = "card" + (isAnswer ? " answer" : "");
+  el.title = "Klicken zum Anheften";
+  el.onclick = () => pin(el);
   const label = isAnswer ? `Frage: <b>${esc(ev.query)}</b>` : `<b>${esc(ev.trigger)}</b>`;
   el.innerHTML = `<div class="meta">${label}<span>${esc(engineName(ev.engine))} ${ev.ms} ms</span></div>` +
     (ev.suggestions || []).map((s) => {
@@ -126,9 +187,44 @@ function card(ev, isAnswer) {
   const cards = $("cards");
   cards.prepend(el);
   [...cards.children].forEach((c, i) => c.classList.toggle("old", i > 0));
-  while (cards.children.length > MAX_CARDS) cards.lastChild.remove();
+  while (cards.children.length > MAX_CARDS) {
+    if (cards.lastChild === pinned) pinned = null;
+    cards.lastChild.remove();
+  }
   cards.scrollTop = 0;
+  if (!ev.replay) holdUntil = Date.now() + readMs;
 }
+
+const canReplace = () => !pinned && Date.now() >= holdUntil && Date.now() - userSpokeAt > 1500;
+
+function suggestion(ev) {
+  if (ev.replay || canReplace()) { card(ev, false); return; }
+  pending = ev;
+  renderPending();
+}
+
+function showPending() {
+  if (!pending) return;
+  const ev = pending;
+  pending = null;
+  card(ev, false);
+  renderPending();
+}
+
+function renderPending() {
+  const b = $("pending");
+  b.style.display = pending ? "block" : "none";
+  if (pending) b.textContent = `Neuer Vorschlag wartet: ${pending.trigger} · anzeigen`;
+}
+
+function pin(el) {
+  pinned?.classList.remove("pinned");
+  pinned = pinned === el ? null : el;
+  pinned?.classList.add("pinned");
+  if (!pinned) holdUntil = 0;  // unpinned: a waiting card may come now
+}
+
+setInterval(() => { if (pending && canReplace()) showPending(); }, 500);
 
 function segment(ev) {
   const box = $("transcript");
@@ -160,6 +256,43 @@ function translation(ev) {
   box.scrollTop = box.scrollHeight;
 }
 
+function clearScreen() {
+  saved = "";
+  pending = pinned = null;
+  holdUntil = 0;
+  renderPending();
+  $("transcript").innerHTML = "";
+  $("cards").innerHTML = `<div id="empty"></div>`;
+  lastTurn = null;
+  renderMeeting();
+}
+
+function renderMeeting() {
+  const btn = $("meeting");
+  btn.textContent = meeting.active ? "Meeting beenden" : "Meeting starten";
+  btn.classList.toggle("live", meeting.active);
+  const mic = $("mic");
+  mic.classList.toggle("muted", !meeting.mic);
+  mic.querySelector("svg").innerHTML = MIC_ICONS[meeting.mic ? "on" : "off"];
+  mic.querySelector("span").textContent = meeting.mic ? "Mikro an" : "Mikro aus";
+  const empty = $("empty");
+  if (empty) empty.textContent = meeting.active ? "Warte auf den Gesprächspartner …"
+    : "Klicke auf „Meeting starten“, sobald dein Gespräch beginnt.";
+  renderNotice();
+}
+
+function renderNotice() {
+  const items = [];
+  if (meeting.error) items.push(`<div class="n err">Audio: ${esc(meeting.error)}</div>`);
+  if (saved) items.push(`<div class="n info">Meeting gespeichert: ${esc(saved.split(/[\\/]/).pop())}
+    <button class="link" data-open="meetings">Ordner öffnen</button></div>`);
+  if (ollamaNote) items.push(`<div class="n warn">${esc(ollamaNote)}</div>`);
+  if (kb && kb.files === 0) items.push(`<div class="n info">Deine Wissensbasis ist noch leer. Lege Markdown-Dateien
+    (.md) in den Ordner, z. B. Produkte, Preise, FAQ oder deinen Lebenslauf. Sie werden sofort durchsucht.
+    <button class="link" data-open="notes">Ordner öffnen</button></div>`);
+  $("notice").innerHTML = items.join("");
+}
+
 function setMode(m) {
   mode = m;
   $("tg-proactive").classList.toggle("on", m.proactive);
@@ -185,15 +318,23 @@ const busy = (on) => document.querySelectorAll("#presets button").forEach((b) =>
 function providers(ev) {
   const sel = $("provider");
   sel.innerHTML = "";
+  let active = ev.active;
   for (const p of ev.list) {
     names[p.id] = p.label;
-    const o = document.createElement("option");
-    o.value = p.id;
-    o.disabled = !p.configured;
-    o.textContent = p.configured ? `${p.label} · ${p.model}` : `${p.label} (kein Key)`;
-    sel.append(o);
+    // Every installed Ollama model is its own entry ("ollama:<model>").
+    const models = p.id === "ollama" && ev.ollama_models.length ? ev.ollama_models : [null];
+    for (const m of models) {
+      const o = document.createElement("option");
+      o.value = m ? `ollama:${m}` : p.id;
+      o.disabled = !p.configured;
+      o.textContent = p.configured ? `${p.label} · ${m || p.model}` : `${p.label} (kein Key)`;
+      sel.append(o);
+      if (m && m === p.model && active === "ollama") active = o.value;
+    }
   }
-  sel.value = ev.active;
+  sel.value = active;
+  ollamaNote = ev.ollama_note;
+  renderNotice();
 }
 
 const handlers = {
@@ -203,10 +344,17 @@ const handlers = {
   translation,
   retract: (ev) => { const s = $("s" + ev.id); const turn = s?.parentElement; s?.remove();
     if (turn && !turn.querySelector(".seg")) turn.remove(); },
-  suggestion: (ev) => card(ev, false),
+  suggestion,
+  ui: (ev) => { readMs = ev.read_s * 1000; document.body.classList.toggle("single", ev.single); },
   answer: (ev) => { busy(false); card(ev, true); },
   asking: (ev) => { busy(true); $("err").textContent = `Frage läuft: ${ev.query}`; },
   mode: setMode,
+  meeting: (ev) => { meeting = ev; renderMeeting(); },
+  reset: clearScreen,
+  saved: (ev) => { saved = ev.path; renderNotice(); },
+  window: (ev) => { win = ev; $("win").style.display = ev.supported ? "flex" : "none";
+    $("pin").classList.toggle("on", ev.on_top); $("opacity").value = Math.round(ev.opacity * 100); },
+  kb: (ev) => { kb = ev; renderNotice(); },
   facts: (ev) => { $("facts").textContent = ev.text; },
   memory: (ev) => { $("memory").textContent = ev.text; },
   engine: (ev) => { const e = $("engine"); e.textContent = engineName(ev.engine);
@@ -216,7 +364,8 @@ const handlers = {
     e.className = "badge" + (ev.ready ? "" : " off"); },
   levels: (ev) => { for (const k of ["User", "Participant"])
     $("lv-" + k).style.width = Math.min(100, Math.sqrt(ev[k]) * 300) + "%";
-    $("cnote").textContent = ev.cloud_note || ""; },
+    $("cnote").textContent = ev.cloud_note || "";
+    if (ev.user_speaking) userSpokeAt = Date.now(); },
   focus_query: () => { $("q").focus(); $("q").select(); },
   error: (ev) => { busy(false); $("err").textContent = ev.text; },
 };
@@ -225,7 +374,7 @@ function connect() {
   ws = new WebSocket(`ws://${location.host}/ws`);
   ws.onmessage = (m) => { const ev = JSON.parse(m.data); handlers[ev.type]?.(ev); };
   ws.onclose = () => { $("stt").textContent = "getrennt"; $("stt").className = "badge off"; setTimeout(connect, 1000); };
-  ws.onopen = () => { $("transcript").innerHTML = ""; $("cards").innerHTML = ""; lastTurn = null; };
+  ws.onopen = clearScreen;
 }
 
 const send = (obj) => ws?.readyState === 1 && ws.send(JSON.stringify(obj));
@@ -234,6 +383,16 @@ $("ask").onsubmit = (e) => { e.preventDefault(); const q = $("q").value.trim(); 
 $("provider").onchange = (e) => send({ type: "provider", id: e.target.value });
 $("tg-proactive").onclick = () => send({ type: "mode", proactive: !mode.proactive });
 $("tg-translate").onclick = () => send({ type: "mode", translate: !mode.translate });
+$("open-notes").onclick = () => send({ type: "open", what: "notes" });
+$("pending").onclick = () => { pin(pinned); showPending(); };
+$("open-meetings").onclick = () => send({ type: "open", what: "meetings" });
+$("pin").onclick = () => send({ type: "window", on_top: !win.on_top });
+$("opacity").onchange = (e) => send({ type: "window", opacity: e.target.value / 100 });
+$("notice").onclick = (e) => { const w = e.target.dataset.open; if (w) send({ type: "open", what: w }); };
+$("meeting").onclick = () => send({ type: "meeting", active: !meeting.active });
+$("mic").onclick = () => send({ type: "mic", on: !meeting.mic });
+$("open-settings").onclick = () => send({ type: "open", what: "settings" });
+clearScreen();
 connect();
 </script>
 </body>
