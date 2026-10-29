@@ -8,8 +8,6 @@ from dataclasses import dataclass, field
 from . import cuda  # noqa: F401  (registers NVIDIA DLL dirs before ctranslate2 loads)
 from . import config
 
-LANGS = ("de", "en")
-
 # Subtitle credits from Whisper's training data, with varying suffixes; never real speech.
 CREDITS = ("untertitel im auftrag des zdf", "untertitel der amara.org-community")
 
@@ -87,8 +85,8 @@ class Transcriber:
         if lang is None or (n % config.LANG_DETECT_EVERY == 0 and chunk.duration >= config.CHUNK_MIN_S):
             _, _, probs = self.model.detect_language(chunk.audio)
             probs = dict(probs)
-            # The meetings are German/English only; pick the likelier of the two.
-            lang = max(LANGS, key=lambda l: probs.get(l, 0.0))
+            # Restricting the choice to the expected languages avoids rare misdetections.
+            lang = max(config.LANGUAGES, key=lambda l: probs.get(l, 0.0))
             self._lang[chunk.source] = lang
         return lang
 

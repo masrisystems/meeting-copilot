@@ -33,7 +33,12 @@ WHISPER_DEVICE = _env("WHISPER_DEVICE", "auto")  # auto | cuda | cpu
 WHISPER_MODEL = _env("WHISPER_MODEL", "auto")
 WHISPER_COMPUTE = _env("WHISPER_COMPUTE", "auto")
 WHISPER_DEFAULTS = {"cuda": ("large-v3-turbo", "float16"), "cpu": ("small", "int8")}
-WHISPER_LANGUAGE = _env("WHISPER_LANGUAGE", "auto")  # auto (de/en, sticky per speaker) | de | en
+WHISPER_LANGUAGE = _env("WHISPER_LANGUAGE", "auto")  # auto (one of LANGUAGES, sticky per speaker) | any code
+# Spoken languages (ISO 639-1, any of Whisper's ~99). Detection picks among these; the first is
+# yours: translation goes into it (and from it into the second).
+LANGUAGES = [code.strip() for code in _env("LANGUAGES", "de,en").split(",") if code.strip()]
+# Force the reply language of the suggestions (e.g. "en"); empty = as the prompt says.
+REPLY_LANGUAGE = _env("REPLY_LANGUAGE", "")
 LANG_DETECT_EVERY = 4  # re-detect language every Nth chunk per source
 PROMPT_CONTEXT_CHARS = 200
 
@@ -78,30 +83,33 @@ OLLAMA_MODEL = _env("OLLAMA_MODEL", "granite4:7b-a1b-h")
 OLLAMA_TIMEOUT_S = 30
 
 # --- Assistant ---
-PROACTIVE_DEBOUNCE_S = 1.5
-PROACTIVE_MAX_PENDING_S = 2.5
+# React when the participant has finished a turn (this long without new speech), but during a
+# monologue at the latest after PROACTIVE_MAX_PENDING_S.
+PROACTIVE_DEBOUNCE_S = float(_env("PROACTIVE_PAUSE", "1.5"))
+PROACTIVE_MAX_PENDING_S = float(_env("PROACTIVE_MAX_WAIT", "15"))
+PROACTIVE_REPEAT_S = 60  # the same trigger again within this time is not shown again
+SINGLE_SUGGESTION = _env("SINGLE_SUGGESTION", "false").lower() in ("1", "true", "yes")
+SUGGESTION_READ_S = float(_env("SUGGESTION_READ_S", "10"))  # a new card waits this long before replacing one
 MEMORY_INTERVAL_S = int(_env("MEMORY_INTERVAL", "300"))  # rolling meeting summary every 5 min
 MEMORY_MIN_WORDS = 40  # skip the update when little was said
 
 # --- Knowledge / facts ---
-def _existing_or_example(name):
-    """Own data (git-ignored) if present, otherwise the bundled example."""
-    own = ROOT / name
-    return own if own.exists() else ROOT / "examples" / name
-
-
+# Your own data (git-ignored). Starts empty; examples/ holds samples you can copy in.
 FACTS_FILE = ROOT / "facts.json"
-FLASHCARDS_FILE = _existing_or_example("knowledge_base.json")
-KB_DIR = _existing_or_example("knowledge_base")
+FLASHCARDS_FILE = ROOT / "knowledge_base.json"
+KB_DIR = ROOT / "knowledge_base"
 # Extra files or folders to index, separated by ";" (e.g. interview prep notes in a vault).
 KB_EXTRA_PATHS = [Path(p.strip()) for p in _env("KB_EXTRA_PATHS", "").split(";") if p.strip()]
 DB_DIR = ROOT / "db_py"
 DB_TABLE = "docs"
-EMBEDDING_MODEL = "jinaai/jina-embeddings-v2-base-de"
+# German/English. For other languages e.g. "intfloat/multilingual-e5-large" (re-indexes automatically).
+EMBEDDING_MODEL = _env("EMBEDDING_MODEL", "jinaai/jina-embeddings-v2-base-de")
 RAG_TOP_K = 3
 
 # --- Paths ---
 SESSIONS_DIR = ROOT / "sessions"
+# One Markdown record per meeting (summary, facts, suggestions, transcript); e.g. a folder in your vault.
+MEETINGS_DIR = Path(_env("MEETINGS_DIR", str(ROOT / "meetings"))).expanduser()
 # prompts/<PROMPT>.md: "system" (client/sales calls) or "interview" (job interviews, meetings at work)
 SYSTEM_PROMPT_FILE = Path(__file__).resolve().parent / "prompts" / (_env("PROMPT", "system") + ".md")
 WEB_DIR = Path(__file__).resolve().parent / "web"
@@ -121,3 +129,5 @@ PRESETS = [
 HOTKEY_FOCUS = "ctrl+alt+space"
 HOTKEY_TRANSLATE = "ctrl+alt+t"
 HOTKEY_PROACTIVE = "ctrl+alt+p"
+HOTKEY_MIC = "ctrl+alt+m"
+HOTKEY_ON_TOP = "ctrl+alt+o"

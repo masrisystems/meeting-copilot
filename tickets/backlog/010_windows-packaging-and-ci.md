@@ -38,3 +38,4 @@ Start with CI and ruff, then CPU mode, then the installer.
 
 ## Kommentare
 - 2026-10-29: CI (pytest on Windows, Linux and macOS) and the CPU mode (`WHISPER_DEVICE=auto`) landed with #011. Ruff, the installer and the wizard remain.
+- 2026-10-29: `install.ps1` / `install.sh` (one-line install, model pre-download, desktop and app-menu icons; `--exit-on-close`, single instance, `--log`). Untested on Windows and macOS so far. Remaining: a real installer (.exe/.dmg) without uv, the first-run wizard, ruff.

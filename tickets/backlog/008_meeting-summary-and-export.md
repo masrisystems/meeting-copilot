@@ -35,3 +35,4 @@ At the end of a meeting, one click produces a Markdown summary with decisions, a
 Add an `Assistant.end_meeting()` that combines the memory with the transcript tail, asks for structured JSON (decisions, action_items, open_questions), and renders it to Markdown.
 
 ## Kommentare
+- 2026-10-29: Each meeting (Meeting starten/beenden) is saved as `MEETINGS_DIR/Meeting <date> <time>.md` with the final summary, facts, suggestions/answers and the transcript (`copilot/export.py`). Open: action items, sharing/export formats, a meeting list in the UI.
