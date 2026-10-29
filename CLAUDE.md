@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A Windows real-time meeting copilot in Python (`copilot/`). It captures the mic and WASAPI loopback, does VAD chunking, transcribes with faster-whisper on CUDA, and calls Gemini with an Ollama fallback. The UI is a local web page. See README.md for setup, hotkeys and the pipeline overview, and `tickets/` for the roadmap (Echo ticket format, `tickets/backlog/NNN_*.md`; commits reference `(#NNN)`).
+A real-time meeting copilot in Python (`copilot/`) for Windows, Linux and macOS. It captures the mic and the system audio, does VAD chunking, transcribes with faster-whisper (CUDA, or CPU when no NVIDIA GPU is usable), and calls a cloud AI with an Ollama fallback. The UI is a local web page. See README.md for setup, hotkeys and the pipeline overview, and `tickets/` for the roadmap (Echo ticket format, `tickets/backlog/NNN_*.md`; commits reference `(#NNN)`).
 
 The project is open source (MIT) at `github.com/masrisystems/meeting-copilot` (remote `public`). The private repo `masrisystems/meetings` (remote `origin`) has the same `main` plus the `legacy` branch, which holds the old Meetily-based Node scripts and private knowledge files. Never commit `knowledge_base/`, `knowledge_base.json`, `facts.json`, `.env` or `sessions/`: they are the user's private data and are git-ignored. Public samples live in `examples/`.
 
@@ -13,7 +13,7 @@ The project is open source (MIT) at `github.com/masrisystems/meeting-copilot` (r
 ```sh
 uv sync                                        # Python 3.12 env (pinned; 3.13+ lacks reliable wheels)
 uv run python -m copilot [--no-browser --no-hotkeys --fresh-facts]
-uv run pytest                                  # all unit tests (no audio/GPU)
+uv run pytest                                  # all unit tests (no audio/GPU), CI: .github/workflows/ci.yml
 uv run pytest tests/test_core.py::test_echo_mic_before_loopback_is_retracted   # single test
 uv run python -m copilot.stt_bench file.wav    # real VAD + Whisper latency on a WAV
 uv run python -m copilot.devices               # device list + live levels
@@ -23,7 +23,9 @@ uv run python -m copilot.rag index | search "<query>"
 ## Architecture notes (non-obvious parts)
 
 - **Threads vs loop:** each audio source has a `VadWorker` thread, and one `SttWorker` thread owns the Whisper model. Everything else (assistant, memory loop, LLM, FastAPI/uvicorn, WebSocket) runs on one asyncio loop. Segments cross over via `loop.call_soon_threadsafe(assistant.on_segment, seg)`. `Hub.publish` must only be called on the loop.
-- **CUDA DLLs:** `copilot/cuda.py` must be imported before faster_whisper/ctranslate2. It registers the pip-installed `nvidia/*/bin` dirs. `stt.py` does this.
+- **Platforms** (`audio.py`): one `_Source` interface (`device["name"]`, `queue`, `level`, `start/stop`) with three backends. Windows: `pyaudiowpatch` WASAPI mic + loopback. Linux: one `parec` subprocess per source, `@DEFAULT_SOURCE@` / `@DEFAULT_MONITOR@`, PulseAudio resamples to 16 kHz mono float32. macOS: `sounddevice`; the loopback is a virtual device (BlackHole), since CoreAudio has none. Platform packages are gated with `sys_platform` markers in `pyproject.toml`; import them only inside the matching branch. Hotkeys: `keyboard` on Windows, `pynput` elsewhere (X11 only on Linux); failures only print a hint. CI runs tests and import smoke checks on all three OSes.
+- **Whisper settings** (`stt.whisper_settings`): `WHISPER_DEVICE/MODEL/COMPUTE=auto` resolve via `ctranslate2.get_cuda_device_count()` to `large-v3-turbo`/`float16` on CUDA or `small`/`int8` on CPU.
+- **CUDA DLLs:** `copilot/cuda.py` must be imported before faster_whisper/ctranslate2. On Windows it registers the pip-installed `nvidia/*/bin` dirs (no-op elsewhere; Linux uses system CUDA libraries). `stt.py` does this.
 - **Silero VAD** uses the ONNX file bundled with faster-whisper (`faster_whisper/assets/silero_vad_v6.onnx`), run frame by frame. The v6 model needs the previous frame's last 64 samples prepended (input `(1, 576)`). `Chunker` is pure logic and unit-tested; `SileroStream` is stateful.
 - **WASAPI loopback sends no data while output is silent.** `VadWorker` feeds synthetic silence on queue timeouts so open utterances still end.
 - **Whisper latency:** auto language detection costs a full extra encoder pass (~240 ms), so the language is sticky per source and re-detected every `LANG_DETECT_EVERY` chunks. `temperature=0.0` disables the fallback re-decodes. Models load with `local_files_only=True` first, because the HF freshness check can take minutes.

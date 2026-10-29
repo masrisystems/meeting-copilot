@@ -14,3 +14,4 @@ Feature tickets in the [Echo ticket format](https://masrisystems.com/brain). New
 | 008 | [Meeting summary and export](backlog/008_meeting-summary-and-export.md) | feature | proposed |
 | 009 | [Knowledge base and meeting profiles](backlog/009_knowledge-base-and-client-profiles.md) | feature | proposed |
 | 010 | [Windows packaging and CI](backlog/010_windows-packaging-and-ci.md) | chore | proposed |
+| 011 | [Linux and macOS support](completed/011_linux-and-macos-support.md) | feature | completed |
