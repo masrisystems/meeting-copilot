@@ -278,6 +278,7 @@ def test_kb_sources_include_extra_files_and_folders(tmp_path, monkeypatch):
 # --- misc ----------------------------------------------------------------------------
 def test_hallucination_filter():
     assert is_hallucination("Untertitel im Auftrag des ZDF", 0.5, -0.5)
+    assert is_hallucination("Untertitel im Auftrag des ZDF für funk, 2017", 0.0, -0.2)
     assert is_hallucination("  ...  ", 0.0, 0.0)
     assert not is_hallucination("Was kostet das?", 0.1, -0.3)
 

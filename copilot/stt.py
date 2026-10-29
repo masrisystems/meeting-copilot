@@ -10,11 +10,11 @@ from . import config
 
 LANGS = ("de", "en")
 
+# Subtitle credits from Whisper's training data, with varying suffixes; never real speech.
+CREDITS = ("untertitel im auftrag des zdf", "untertitel der amara.org-community")
+
 # Classic Whisper hallucinations on silence/noise, dropped when the model is unsure.
 FILLER = {
-    "untertitel im auftrag des zdf",
-    "untertitel im auftrag des zdf, 2017",
-    "untertitel der amara.org-community",
     "vielen dank.",
     "vielen dank fürs zuschauen.",
     "thank you.",
@@ -38,7 +38,7 @@ class Segment:
 
 def is_hallucination(text, no_speech_prob, avg_logprob):
     norm = text.strip().lower()
-    if not norm or all(not c.isalnum() for c in norm):
+    if not norm or all(not c.isalnum() for c in norm) or norm.startswith(CREDITS):
         return True
     if no_speech_prob > 0.6 and avg_logprob < -1.0:
         return True
