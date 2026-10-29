@@ -212,6 +212,15 @@ class OllamaProvider(Provider):
         except httpx.HTTPError as e:
             print(f"Ollama warmup failed: {e}")
 
+    async def installed(self):
+        """Names of the installed chat models (embedding models skipped); None if Ollama is not running."""
+        try:
+            r = await self._http.get(f"{config.OLLAMA_URL}/api/tags", timeout=3)
+            r.raise_for_status()
+        except httpx.HTTPError:
+            return None
+        return sorted(m["name"] for m in r.json().get("models", []) if "embed" not in m["name"])
+
 
 def build_providers():
     """All providers in UI order; unconfigured ones (no key) are listed but not selectable."""

@@ -76,11 +76,18 @@ class LLM:
         self._fails = 0
         self._skip_until = 0.0
         self.note = ""  # why the primary is currently skipped, shown in the UI
+        self.ollama_models = []  # installed, refreshed by check_ollama()
+        self.ollama_note = ""  # Ollama not running / model missing, shown in the UI
         self.primary = self.fallback
         self.set_primary(config.LLM_PROVIDER)
 
     def set_primary(self, provider_id):
-        """Switch the cloud engine at runtime. Unknown or unconfigured ids fall back to Ollama."""
+        """Switch the cloud engine at runtime. Unknown or unconfigured ids fall back to Ollama.
+        "ollama:<model>" also switches the Ollama model (used as the fallback as well)."""
+        provider_id, _, model = provider_id.partition(":")
+        if provider_id == "ollama" and model:
+            self.fallback.model = model
+            self._update_ollama_note()
         p = self.providers.get(provider_id)
         if p is None or not p.configured:
             print(f"LLM provider '{provider_id}' is not configured (missing key/URL/model) - using Ollama only.")
@@ -96,7 +103,27 @@ class LLM:
         """Provider list for the UI selector."""
         return {"type": "providers", "active": self.primary.id,
                 "list": [{"id": p.id, "label": p.label, "model": p.model, "configured": p.configured}
-                         for p in self.providers.values()]}
+                         for p in self.providers.values()],
+                "ollama_models": self.ollama_models, "ollama_note": self.ollama_note}
+
+    async def check_ollama(self):
+        """Refresh the installed Ollama models. Returns True when the UI needs an update."""
+        before = (self.ollama_models, self.ollama_note)
+        models = await self.fallback.installed()
+        self.ollama_models = models or []
+        self._update_ollama_note(running=models is not None)
+        return (self.ollama_models, self.ollama_note) != before
+
+    def _update_ollama_note(self, running=True):
+        m = self.fallback.model
+        if not running:
+            self.ollama_note = "Ollama läuft nicht (ollama.com): kein lokaler Fallback"
+        elif self.ollama_models and m not in self.ollama_models:
+            self.ollama_note = f"Ollama-Modell {m} fehlt: ollama pull {m}, oder oben ein installiertes wählen"
+        elif not self.ollama_models:
+            self.ollama_note = f"Kein Ollama-Modell installiert: ollama pull {m}"
+        else:
+            self.ollama_note = ""
 
     @property
     def primary_available(self):
