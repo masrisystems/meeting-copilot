@@ -1,0 +1,23 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --locked
+      - run: uv run pytest
+      - name: Import every module with its platform backend
+        run: uv run python -c "import copilot.audio, copilot.devices, copilot.hotkeys, copilot.stt, copilot.stt_bench, copilot.__main__"
+      - name: Whisper auto settings resolve on this runner
+        run: uv run python -c "import ctranslate2; from copilot.stt import whisper_settings; print(whisper_settings(ctranslate2.get_cuda_device_count()))"
