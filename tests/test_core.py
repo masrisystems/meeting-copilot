@@ -9,7 +9,8 @@ import httpx
 from copilot.llm import LLM, SUGGESTION_SCHEMA, parse_json
 from copilot.providers import GeminiProvider, Provider
 from copilot.rag import split_text
-from copilot.stt import Segment, is_hallucination
+from copilot.hotkeys import to_pynput
+from copilot.stt import Segment, is_hallucination, whisper_settings
 from copilot.transcript import Transcript
 from copilot.vad import Chunker
 
@@ -287,3 +288,20 @@ def test_split_text_respects_size():
     text = "\n\n".join(f"Absatz {i}. " + "Wort " * 60 for i in range(10))
     chunks = split_text(text)
     assert len(chunks) > 1 and all(len(c) <= 500 for c in chunks)
+
+
+# --- platform ------------------------------------------------------------------------
+def test_whisper_auto_picks_gpu_or_cpu_defaults(monkeypatch):
+    for name in ("WHISPER_DEVICE", "WHISPER_MODEL", "WHISPER_COMPUTE"):
+        monkeypatch.setattr(config, name, "auto")
+    assert whisper_settings(1) == ("large-v3-turbo", "cuda", "float16")
+    assert whisper_settings(0) == ("small", "cpu", "int8")
+    monkeypatch.setattr(config, "WHISPER_MODEL", "base")
+    monkeypatch.setattr(config, "WHISPER_DEVICE", "cpu")
+    assert whisper_settings(1) == ("base", "cpu", "int8")
+
+
+def test_hotkeys_convert_to_pynput_format():
+    assert to_pynput("ctrl+alt+1") == "<ctrl>+<alt>+1"
+    assert to_pynput("ctrl+alt+space") == "<ctrl>+<alt>+<space>"
+    assert all(to_pynput(p["hotkey"]) for p in config.PRESETS)

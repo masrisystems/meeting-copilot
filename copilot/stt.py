@@ -45,12 +45,28 @@ def is_hallucination(text, no_speech_prob, avg_logprob):
     return norm in FILLER and no_speech_prob > 0.2
 
 
+def whisper_settings(cuda_devices):
+    """(model, device, compute_type), resolving "auto" by whether a CUDA device is usable."""
+    device = config.WHISPER_DEVICE
+    if device == "auto":
+        device = "cuda" if cuda_devices > 0 else "cpu"
+    model, compute = config.WHISPER_DEFAULTS.get(device, config.WHISPER_DEFAULTS["cpu"])
+    if config.WHISPER_MODEL != "auto":
+        model = config.WHISPER_MODEL
+    if config.WHISPER_COMPUTE != "auto":
+        compute = config.WHISPER_COMPUTE
+    return model, device, compute
+
+
 class Transcriber:
     def __init__(self):
+        import ctranslate2
         from faster_whisper import WhisperModel
 
-        args = (config.WHISPER_MODEL,)
-        kwargs = {"device": config.WHISPER_DEVICE, "compute_type": config.WHISPER_COMPUTE}
+        model, device, compute = whisper_settings(ctranslate2.get_cuda_device_count())
+        print(f"Whisper:  {model} on {device} ({compute})")
+        args = (model,)
+        kwargs = {"device": device, "compute_type": compute}
         try:
             # The Hugging Face freshness check can take minutes on a slow link; the
             # cached model loads in ~4 s.
@@ -109,7 +125,7 @@ class SttWorker(threading.Thread):
 
     def run(self):
         transcriber = Transcriber()
-        # First CUDA call compiles kernels (~5 s); do it before the meeting audio arrives.
+        # The first call is slow (CUDA compiles kernels, ~5 s); do it before the meeting audio arrives.
         import numpy as np
 
         list(transcriber.model.transcribe(np.zeros(config.SAMPLE_RATE, dtype=np.float32), language="de")[0])
