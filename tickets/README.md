@@ -15,3 +15,4 @@ Feature tickets in the [Echo ticket format](https://masrisystems.com/brain). New
 | 009 | [Knowledge base and meeting profiles](backlog/009_knowledge-base-and-client-profiles.md) | feature | proposed |
 | 010 | [Windows packaging and CI](backlog/010_windows-packaging-and-ci.md) | chore | proposed |
 | 011 | [Linux and macOS support](completed/011_linux-and-macos-support.md) | feature | completed |
+| 012 | [Launch-ready README, repo metadata and positioning](backlog/012_launch-ready-readme-and-positioning.md) | chore | proposed |
