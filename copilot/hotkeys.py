@@ -1,10 +1,13 @@
 """Global hotkeys (hooks run on their own thread; hand off to the loop).
 
-Windows uses the `keyboard` library. Linux (X11 only, not Wayland) and macOS use
-pynput; macOS asks for the Accessibility permission on first use.
+Windows uses RegisterHotKey: a low-level hook (the `keyboard` library) is silently removed
+by Windows when the busy process answers it too slowly, which killed the hotkeys mid-meeting.
+Linux (X11 only, not Wayland) and macOS use pynput; macOS asks for the Accessibility
+permission on first use.
 """
 
 import sys
+import threading
 
 from . import config, window
 
@@ -29,13 +32,52 @@ def to_pynput(combo):
     return "+".join(k if len(k) == 1 else f"<{k}>" for k in combo.split("+"))
 
 
+MODIFIERS = {"alt": 0x1, "ctrl": 0x2, "shift": 0x4, "win": 0x8}
+MOD_NOREPEAT = 0x4000
+VIRTUAL_KEYS = {"space": 0x20}
+
+
+def to_win32(combo):
+    """"ctrl+alt+t" -> (MOD_CONTROL | MOD_ALT, ord("T")) for RegisterHotKey."""
+    *mods, key = combo.lower().split("+")
+    vk = VIRTUAL_KEYS.get(key) or ord(key.upper())
+    flags = 0
+    for mod in mods:
+        flags |= MODIFIERS[mod]
+    return flags, vk
+
+
+def _bind_win32(bindings):
+    """WM_HOTKEY arrives on the thread that registered the hotkeys, so it runs the message loop."""
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    callbacks = list(bindings.items())
+
+    def run():
+        failed = []
+        for i, (combo, _) in enumerate(callbacks):
+            mods, vk = to_win32(combo)
+            if not user32.RegisterHotKey(None, i, mods | MOD_NOREPEAT, vk):
+                failed.append(combo)
+        if failed:  # usually taken by another app
+            print(f"Hotkeys:  {', '.join(failed)} unavailable (in use by another app?); use the buttons")
+        msg = wintypes.MSG()
+        while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
+            if msg.message == 0x0312:  # WM_HOTKEY
+                try:
+                    callbacks[msg.wParam][1]()
+                except Exception as e:  # one failing action must not end the loop for all hotkeys
+                    print(f"Hotkey {callbacks[msg.wParam][0]} failed: {e}")
+
+    threading.Thread(target=run, name="hotkeys", daemon=True).start()
+
+
 def _bind(bindings):
     """bindings: {"ctrl+alt+1": callback}"""
     if sys.platform == "win32":
-        import keyboard
-
-        for combo, fn in bindings.items():
-            keyboard.add_hotkey(combo, fn)
+        _bind_win32(bindings)
         return
     from pynput import keyboard
 

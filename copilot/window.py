@@ -27,7 +27,9 @@ def find_hwnds():
     import win32gui
 
     hwnds = []
-    win32gui.EnumWindows(lambda h, _: hwnds.append(h) if win32gui.GetWindowText(h) == TITLE else None, None)
+    # Chromium windows only: a console titled "Meeting Copilot" must not be pinned on top of the app
+    win32gui.EnumWindows(lambda h, _: hwnds.append(h) if win32gui.GetWindowText(h) == TITLE
+                         and win32gui.GetClassName(h) == "Chrome_WidgetWin_1" else None, None)
     return hwnds
 
 

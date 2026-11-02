@@ -40,6 +40,7 @@ class Assistant:
         self.language_rule = REPLY_LANGUAGE_RULE.format(lang=config.REPLY_LANGUAGE) if config.REPLY_LANGUAGE else ""
         self.proactive = True
         self.translate = False
+        self._translating = asyncio.Lock()
         self.engine = "-"
         self._timer = None
         self._pending_since = None
@@ -185,8 +186,8 @@ class Assistant:
         prompt = await self._context(latest) + "\n\nReagiere auf den letzten [Participant]-Beitrag."
         try:
             result, engine, secs = await self.llm.generate_json(self.system + self.language_rule, prompt)
-        except Exception as e:
-            self.emit({"type": "error", "text": f"LLM: {e}"})
+        except Exception as e:  # a timeout's message is empty
+            self.emit({"type": "error", "text": f"LLM: {str(e) or type(e).__name__}"})
             return
         self._engine(engine, secs)
         if not isinstance(result, dict):
@@ -215,7 +216,7 @@ class Assistant:
             result, engine, secs = await self.llm.generate_json(self.system + ASK_ADDENDUM + self.language_rule,
                                                                 prompt)
         except Exception as e:
-            self.emit({"type": "error", "text": f"LLM: {e}"})
+            self.emit({"type": "error", "text": f"LLM: {str(e) or type(e).__name__}"})
             return
         self._engine(engine, secs)
         if not isinstance(result, dict):
@@ -230,11 +231,17 @@ class Assistant:
     async def _translate(self, seg):
         mine = config.LANGUAGES[0]
         target = mine if seg.lang != mine else (config.LANGUAGES[1:] or ["en"])[0]
-        try:
-            text, engine, secs = await self.llm.generate(TRANSLATE_SYSTEM.format(target=target), seg.text)
-        except Exception as e:
-            self.emit({"type": "error", "text": f"Translation: {e}"})
-            return
+        queued = time.monotonic()
+        # One at a time: a local model can't keep up with every line in parallel, and a pile-up
+        # made all of them time out. Lines that waited too long are skipped to catch up.
+        async with self._translating:
+            if time.monotonic() - queued > config.TRANSLATE_MAX_WAIT_S:
+                return
+            try:
+                text, engine, secs = await self.llm.generate(TRANSLATE_SYSTEM.format(target=target), seg.text)
+            except Exception as e:
+                self.emit({"type": "error", "text": f"Translation: {str(e) or type(e).__name__}"})
+                return
         self.emit({"type": "translation", "id": seg.id, "source": seg.source, "text": text.strip(),
                    "target": target.upper(), "engine": engine, "ms": round(secs * 1000)})
 

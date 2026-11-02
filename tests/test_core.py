@@ -10,7 +10,7 @@ import httpx
 from copilot.llm import LLM, SUGGESTION_SCHEMA, parse_json
 from copilot.providers import GeminiProvider, Provider
 from copilot.rag import split_text
-from copilot.hotkeys import to_pynput
+from copilot.hotkeys import to_pynput, to_win32
 from copilot.stt import Segment, is_hallucination, whisper_settings
 from copilot.transcript import Transcript
 from copilot.vad import Chunker
@@ -308,6 +308,12 @@ def test_hotkeys_convert_to_pynput_format():
     assert all(to_pynput(p["hotkey"]) for p in config.PRESETS)
 
 
+def test_hotkeys_convert_to_win32_modifiers_and_keys():
+    assert to_win32("ctrl+alt+t") == (0x2 | 0x1, ord("T"))
+    assert to_win32("ctrl+alt+space") == (0x3, 0x20)
+    assert to_win32("ctrl+alt+1") == (0x3, ord("1"))
+
+
 # --- ollama models -------------------------------------------------------------------
 def test_ollama_model_switch_and_status_note(monkeypatch):
     client = _llm(monkeypatch, cloud_delay=0, ollama_delay=0)
@@ -461,6 +467,28 @@ def test_translation_goes_into_your_language_and_from_it_into_the_second(tmp_pat
         s.lang = lang
         asyncio.run(a._translate(s))
     assert targets == ["ar", "de"]
+
+
+def test_translations_run_one_at_a_time_and_stale_lines_are_skipped(tmp_path, monkeypatch):
+    calls = []
+
+    class SlowLLM:
+        async def generate(self, system, prompt):
+            calls.append(prompt)
+            await asyncio.sleep(0.2)
+            return prompt, "ollama", 0.2
+
+    a, events = _meeting_assistant(tmp_path, monkeypatch, None)
+    a.llm = SlowLLM()
+    monkeypatch.setattr(config, "TRANSLATE_MAX_WAIT_S", 0.3)
+
+    async def run():
+        await asyncio.gather(*(a._translate(seg("Participant", f"line {i}", 1.0)) for i in range(4)))
+
+    asyncio.run(run())
+    # line 0 runs at once, line 1 waits 0.2 s, lines 2 and 3 have waited 0.4 s > 0.3 s
+    assert calls == ["line 0", "line 1"]
+    assert [e["text"] for e in events if e["type"] == "translation"] == ["line 0", "line 1"]
 
 
 # --- window --------------------------------------------------------------------------

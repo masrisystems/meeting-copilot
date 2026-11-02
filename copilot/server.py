@@ -71,7 +71,8 @@ def create_app(hub, assistant, window):
 
     @app.get("/")
     async def index():
-        return FileResponse(config.WEB_DIR / "index.html")
+        # no-cache: the app window's own profile would otherwise keep showing an old UI after updates
+        return FileResponse(config.WEB_DIR / "index.html", headers={"Cache-Control": "no-cache"})
 
     @app.get("/icon.svg")
     async def icon():

@@ -3,7 +3,7 @@
 import os
 from pathlib import Path
 
-from dotenv import load_dotenv
+from dotenv import dotenv_values, load_dotenv
 
 ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT / ".env")
@@ -81,6 +81,7 @@ CUSTOM_MODEL = _env("CUSTOM_MODEL", "")
 OLLAMA_URL = _env("OLLAMA_URL", "http://127.0.0.1:11434")
 OLLAMA_MODEL = _env("OLLAMA_MODEL", "granite4:7b-a1b-h")
 OLLAMA_TIMEOUT_S = 30
+TRANSLATE_MAX_WAIT_S = 10  # translations run one at a time; a line waiting longer is skipped
 
 # --- Assistant ---
 # React when the participant has finished a turn (this long without new speech), but during a
@@ -112,6 +113,8 @@ SESSIONS_DIR = ROOT / "sessions"
 MEETINGS_DIR = Path(_env("MEETINGS_DIR", str(ROOT / "meetings"))).expanduser()
 # prompts/<PROMPT>.md: "system" (client/sales calls) or "interview" (job interviews, meetings at work)
 SYSTEM_PROMPT_FILE = Path(__file__).resolve().parent / "prompts" / (_env("PROMPT", "system") + ".md")
+if not SYSTEM_PROMPT_FILE.is_file():  # cmd.exe sets PROMPT=$P$G for its own prompt, hiding the .env value
+    SYSTEM_PROMPT_FILE = SYSTEM_PROMPT_FILE.with_name((dotenv_values(ROOT / ".env").get("PROMPT") or "system") + ".md")
 WEB_DIR = Path(__file__).resolve().parent / "web"
 
 # --- Server / UI ---
